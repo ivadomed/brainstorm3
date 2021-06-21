@@ -186,6 +186,13 @@ if ~isempty(AnnotLhFiles) && ~isempty(AnnotRhFiles)
     if ~isempty(iBAold) && ~isempty(iBAnew)
         AnnotRhFiles(iBAold) = [];
     end
+    % Re-order the files so that FreeSurfer atlases are first (for automatic region labelling)
+    iDKL = find(~cellfun(@(c)isempty(strfind(c, 'aparc')), AnnotLhFiles));
+    iDKR = find(~cellfun(@(c)isempty(strfind(c, 'aparc')), AnnotRhFiles));
+    if ~isempty(iDKL) && ~isempty(iDKR)
+        AnnotLhFiles = AnnotLhFiles([iDKL, setdiff(1:length(AnnotLhFiles), iDKL)]);
+        AnnotRhFiles = AnnotRhFiles([iDKR, setdiff(1:length(AnnotRhFiles), iDKR)]);
+    end
 end
 % Find thickness maps
 if isExtraMaps
@@ -205,7 +212,7 @@ end
 
 %% ===== IMPORT T1 =====
 % Read T1 MRI
-[BstT1File, sMri] = import_mri(iSubject, T1File, [], 0, [], T1Comment);
+[BstT1File, sMri] = import_mri(iSubject, T1File, 'ALL', 0, [], T1Comment);
 if isempty(BstT1File)
     errorMsg = 'Could not import FreeSurfer folder: MRI was not imported properly';
     if isInteractive
@@ -213,6 +220,9 @@ if isempty(BstT1File)
     end
     return;
 end
+% Enforce it as the permanent default MRI
+sSubject = db_surface_default(iSubject, 'Anatomy', 1, 0);
+
 
 %% ===== DEFINE FIDUCIALS =====
 % If fiducials file exist: read it
@@ -299,7 +309,7 @@ end
 %% ===== IMPORT T2 =====
 % Read T2 MRI (optional)
 if ~isempty(T2File)
-    [BstT2File, sMri] = import_mri(iSubject, T2File, [], 0, [], T2Comment);
+    [BstT2File, sMri] = import_mri(iSubject, T2File, 'ALL', 0, [], T2Comment);
     if isempty(BstT2File)
         disp('BST> Could not import T2.mgz.');
     end

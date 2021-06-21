@@ -186,7 +186,7 @@ function bstPanelNew = CreatePanel() %#ok<DEFNU>
             jToggleResectLeft   = gui_component('toggle', jPanelSurfaceResect, 'br center', 'Left',   {Insets(0,0,0,0), Dimension(BUTTON_WIDTH-3, DEFAULT_HEIGHT)}, '', @ButtonResectLeftToggle_Callback);           
             jToggleResectRight  = gui_component('toggle', jPanelSurfaceResect, '',          'Right',  {Insets(0,0,0,0), Dimension(BUTTON_WIDTH-3, DEFAULT_HEIGHT)}, '', @ButtonResectRightToggle_Callback);           
             jToggleResectStruct = gui_component('toggle', jPanelSurfaceResect, '',          'Struct', {Insets(0,0,0,0), Dimension(BUTTON_WIDTH-3, DEFAULT_HEIGHT)}, '', @ButtonResectStruct_Callback);           
-            gui_component('button', jPanelSurfaceResect, '',          'Reset', {Insets(0,0,0,0), Dimension(BUTTON_WIDTH-3, DEFAULT_HEIGHT)}, '', @ButtonResectResetCallback);
+            jButtonResectReset  = gui_component('button', jPanelSurfaceResect, '',          'Reset', {Insets(0,0,0,0), Dimension(BUTTON_WIDTH-3, DEFAULT_HEIGHT)}, '', @ButtonResectResetCallback);
         jPanelOptions.add(jPanelSurfaceResect);
  
         % ===== SURFACE LABELS =====
@@ -221,6 +221,7 @@ function bstPanelNew = CreatePanel() %#ok<DEFNU>
                                   'jToggleResectLeft',      jToggleResectLeft, ...
                                   'jToggleResectRight',     jToggleResectRight, ...
                                   'jToggleResectStruct',    jToggleResectStruct, ...
+                                  'jButtonResectReset',     jButtonResectReset, ...
                                   'jLabelAlphaTitle',       jLabelAlphaTitle, ...
                                   'jLabelDataAlphaTitle',   jLabelDataAlphaTitle, ...
                                   'jSliderDataAlpha',       jSliderDataAlpha, ...
@@ -1098,7 +1099,7 @@ function UpdateSurfaceProperties()
     % Enable/disable controls
     isOverlay = ~isempty(TessInfo(iSurface).DataSource.FileName);
     isOverlayStat = isOverlay && ismember(file_gettype(TessInfo(iSurface).DataSource.FileName), {'presults', 'pdata', 'ptimefreq'});
-    isOverlayLabel = isOverlay && ~isempty(TessInfo(iSurface).OverlayLabels);
+    isOverlayLabel = isOverlay && TessInfo(iSurface).isOverlayAtlas;
     gui_enable([ctrl.jLabelDataAlphaTitle, ctrl.jSliderDataAlpha, ctrl.jLabelDataAlpha], isOverlay, 0);
     gui_enable([ctrl.jLabelSizeTitle, ctrl.jLabelSize, ctrl.jSliderSize], isOverlay && ~isOverlayLabel, 0);
     gui_enable([ctrl.jLabelThreshTitle, ctrl.jSliderDataThresh, ctrl.jLabelDataThresh], isOverlay && ~isOverlayStat && ~isOverlayLabel, 0);
@@ -1518,6 +1519,23 @@ function [isOk, TessInfo] = SetSurfaceData(hFig, iTess, dataType, dataFile, isSt
 end
 
 
+%% ===== REMOVE DATA SOURCE FOR A SURFACE =====
+function TessInfo = RemoveSurfaceData(hFig, iTess)
+    % Get surfaces list for this figure
+    TessInfo = getappdata(hFig, 'Surface');
+    % Remove overlay
+    TessInfo(iTess).DataSource.Type     = [];
+    TessInfo(iTess).DataSource.FileName = [];
+    TessInfo(iTess).Data        = [];
+    TessInfo(iTess).DataMinMax  = [];
+    TessInfo(iTess).DataWmat    = [];
+    TessInfo(iTess).OverlayCube = [];
+    % Update figure appdata
+    setappdata(hFig, 'Surface', TessInfo);
+    % Update colormap
+    UpdateSurfaceColormap(hFig, iTess);
+end
+
 
 %% ===== UPDATE SURFACE DATA =====
 % Update the 'Data' field for given surfaces :
@@ -1708,6 +1726,10 @@ function [isOk, TessInfo] = UpdateSurfaceData(hFig, iSurfaces)
                     % Replace values with clusters
                     if ~isempty(sClusters)
                         mask = 0 * TessInfo(iTess).Data;
+                        % If displaying the second of a replicated time point, which is not available in the clusters mask: ignore the time information
+                        if (length(iTime) == 1) && (iTime == 2) && (size(sClusters(1).mask,2) == 1)
+                            iTime = 1;
+                        end
                         % Plot each cluster
                         for iClust = 1:length(sClusters)
                             mask = mask | sClusters(iClust).mask(:, iTime, GlobalData.UserFrequencies.iCurrentFreq);

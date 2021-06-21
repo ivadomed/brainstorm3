@@ -23,7 +23,7 @@ function varargout = process_segment_cat12( varargin )
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Authors: Francois Tadel, 2019-2020
+% Authors: Francois Tadel, 2019-2021
 
 eval(macro_method);
 end
@@ -69,7 +69,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.sphreg.Type    = 'checkbox';
     sProcess.options.sphreg.Value   = 1;
     % Option: Volume atlases
-    sProcess.options.vol.Comment = 'Compute volume atlases';
+    sProcess.options.vol.Comment = 'Compute volume parcellations';
     sProcess.options.vol.Type    = 'checkbox';
     sProcess.options.vol.Value   = 1;
     % Option: Import extra map
@@ -80,6 +80,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.cerebellum.Comment = '<FONT color="#777777">Compute cerebellum surfaces [Experimental]</FONT>';
     sProcess.options.cerebellum.Type    = 'checkbox';
     sProcess.options.cerebellum.Value   = 0;
+    sProcess.options.cerebellum.Hidden  = 1;
 end
 
 
@@ -156,9 +157,12 @@ end
 %% ===== COMPUTE CAT12 SEGMENTATION =====
 function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, TpmNii, isSphReg, isVolumeAtlases, isExtraMaps, isCerebellum)
     isOk = 0;
-    errMsg = '';
-    % Initialize SPM
-    bst_spm_init(isInteractive, 'cat12');
+    % Initialize SPM12+CAT12
+    [isInstalled, errMsg, PlugCat] = bst_plugin('Install', 'cat12', isInteractive, 1728);
+    if ~isInstalled
+        return;
+    end
+    bst_plugin('SetProgressLogo', 'cat12');
     % Check if SPM is in the path
     if ~exist('spm_jobman', 'file')
         errMsg = 'SPM must be in the Matlab path to use this feature.';
@@ -210,11 +214,11 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
     end
 
     % ===== DELETE EXISTING SURFACES =====
-    if ~isempty(sSubject.Surface)
+    if ~isempty(sSubject.Surface) || (length(sSubject.Anatomy) >= 2)
         % Ask user whether the previous anatomy should be removed
         if isInteractive
-            isDel = java_dialog('confirm', ['Warning: There are already surfaces available for this subject.' 10 10 ...
-                'Delete the existing surfaces?' 10 10], 'CAT12 segmentation');
+            isDel = java_dialog('confirm', ['Warning: There are already surfaces or atlases in this subject.' 10 10 ...
+                'Delete the existing files?' 10 10], 'CAT12 segmentation');
         else
             isDel = 1;
         end
@@ -235,17 +239,18 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
     % If the SCS transformation is not defined: compute MNI transformation to get a default one
     if isempty(sMri) || ~isfield(sMri, 'SCS') || ~isfield(sMri.SCS, 'NAS') || ~isfield(sMri.SCS, 'LPA') || ~isfield(sMri.SCS, 'RPA') || (length(sMri.SCS.NAS)~=3) || (length(sMri.SCS.LPA)~=3) || (length(sMri.SCS.RPA)~=3) || ~isfield(sMri.SCS, 'R') || isempty(sMri.SCS.R) || ~isfield(sMri.SCS, 'T') || isempty(sMri.SCS.T)
         % Issue warning
-        errMsg = 'Missing NAS/LPA/RPA: Computing the MNI transformation to get default positions.'; 
-        % Compute MNI transformation
+        errMsg = 'Missing NAS/LPA/RPA: Computing the MNI normalization to get default positions.'; 
+        % Compute MNI normalization
         [sMri, errNorm] = bst_normalize_mni(T1FileBst);
         % Handle errors
         if ~isempty(errNorm)
-            errMsg = [errMsg 10 'Error trying to compute the MNI transformation: ' 10 errNorm 10 ...
-                'The surfaces will not be properly aligned with the MRI.'];
+            errMsg = [errMsg 10 'Error trying to compute the MNI normalization: ' 10 errNorm 10 ...
+                'Missing fiducials: the surfaces cannot be aligned with the MRI.'];
         end
     end
 
     % ===== SAVE MRI AS NII =====
+    bst_progress('text', 'Saving temporary files...');
     % Empty temporary folder, otherwise it reuses previous files in the folder
     gui_brainstorm('EmptyTempFolder');
     % Create temporay folder for CAT12 output
@@ -259,7 +264,7 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
     % Let's reload this file to get the transformation matrix, it will be used when importing the results
     if ~isfield(sMri, 'InitTransf') || isempty(sMri.InitTransf) || isempty(find(strcmpi(sMri.InitTransf(:,1), 'vox2ras')))
         % Load again the file, with the default vox2ras transformation
-        [tmp, vox2ras] = in_mri_nii(NiiFile);
+        [tmp, vox2ras] = in_mri_nii(NiiFile, 0, 0, 0);
         % Prepare the history of transformations
         if ~isfield(sMri, 'InitTransf') || isempty(sMri.InitTransf)
             sMri.InitTransf = cell(0,2);
@@ -269,16 +274,24 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
         % Save modification on hard drive
         bst_save(file_fullpath(T1FileBst), sMri, 'v7');
     end
+    
+    % ===== INITIALIZE SPM+CAT =====
+    % Switch to CAT12 expert mode
+    cat12('expert');
+    % Hide CAT12 figures
+    set([findall(0, 'Type', 'Figure', 'Tag', 'Interactive'), ...
+         findall(0, 'Type', 'Figure', 'Tag', 'CAT'), ...
+         findall(0, 'Type', 'Figure', 'Tag', 'Graphics')], 'Visible', 'off');
+    % Initialize SPM job manager
+    spm_jobman('initcfg');
 
     % ===== CALL CAT12 SEGMENTATION =====
+    bst_progress('text', '<HTML>Starting SPM batch... &nbsp;&nbsp;&nbsp;<FONT COLOR="#707070"><I>(see command window)</I></FONT>');
     % Create SPM batch
-    matlabbatch{1}.spm.tools.cat.estwrite.data = {[NiiFile ',1']};
-    matlabbatch{1}.spm.tools.cat.estwrite.data_wmh = {''};
-    matlabbatch{1}.spm.tools.cat.estwrite.useprior = '';
+    matlabbatch{1}.spm.tools.cat.estwrite.data = {NiiFile};
     matlabbatch{1}.spm.tools.cat.estwrite.nproc = 0;                % Blocking call to CAT12
     matlabbatch{1}.spm.tools.cat.estwrite.opts.tpm = {TpmNii};      % User-defined TPM atlas
     matlabbatch{1}.spm.tools.cat.estwrite.output.bias.warped = 0;
-    matlabbatch{1}.spm.tools.cat.estwrite.output.warps       = [0 0]; % Skip deformation fields for the moment: [forward inverse]
     matlabbatch{1}.spm.tools.cat.estwrite.output.GM.native   = 1;   % GM tissue maps
     matlabbatch{1}.spm.tools.cat.estwrite.output.GM.warped   = 0;
     matlabbatch{1}.spm.tools.cat.estwrite.output.GM.mod      = 0;
@@ -298,18 +311,30 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
     matlabbatch{1}.spm.tools.cat.estwrite.output.label.native = 1;  % Label: background=0, CSF=1, GM=2, WM=3, WMH=4
     matlabbatch{1}.spm.tools.cat.estwrite.output.label.warped = 0;
     matlabbatch{1}.spm.tools.cat.estwrite.output.label.dartel = 0;
+    matlabbatch{1}.spm.tools.cat.estwrite.output.labelnative = 1;  % Confirmed useful by CGaser in CAT12.8
+    % CAT12.8 now saves everything in ICBM152NLinAsym09 space: we can use directly the MNI deformation fields
+    matlabbatch{1}.spm.tools.cat.estwrite.output.warps = [1 1];  % Non-linear MNI normalization deformation fields: [forward inverse]
     % Volume atlases
     if isVolumeAtlases
-        matlabbatch{1}.spm.tools.cat.estwrite.output.warps = [1 1];     % Save non-linear MNI normalization deformation fields: [forward inverse]
-        matlabbatch{1}.spm.tools.cat.estwrite.output.ROI = 1;
         matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.neuromorphometrics = 1;
         matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.lpba40             = 1;
         matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.cobra              = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.aal3               = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.anatomy3           = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.ibsr               = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.julichbrain        = 1;
         matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.hammers            = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.mori               = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.thalamus           = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.Schaefer2018_100Parcels_17Networks_order = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.Schaefer2018_200Parcels_17Networks_order = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.Schaefer2018_400Parcels_17Networks_order = 1;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.Schaefer2018_600Parcels_17Networks_order = 1;
         matlabbatch{1}.spm.tools.cat.estwrite.output.atlas.native = 1;  % Save atlases in native space
+        matlabbatch{1}.spm.tools.cat.estwrite.output.atlas.warped = 0;
+        matlabbatch{1}.spm.tools.cat.estwrite.output.atlas.dartel = 0;
     else
         % No ROIs
-        matlabbatch{1}.spm.tools.cat.estwrite.output.ROI = 0;
         matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.noROI = struct([]);   % CGaser comment: Correct syntax to disable ROI processing for volumes   
         matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.neuromorphometrics = 0;
         matlabbatch{1}.spm.tools.cat.estwrite.output.ROImenu.atlases.lpba40             = 0;
@@ -328,7 +353,7 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
     end
     % Extract additional surface parameters: Cortical thickness, Gyrification index, Sulcal depth
     if isExtraMaps
-        % matlabbatch{1}.spm.tools.cat.estwrite.output.surf_measures = 1;   % CGaser comment: Experimental flag
+        matlabbatch{1}.spm.tools.cat.estwrite.output.surf_measures = 1;  % Thickness maps
         % Separate SPM process (second element in the batch)
         matlabbatch{2}.spm.tools.cat.stools.surfextract.data_surf(1) = cfg_dep('CAT12: Segmentation (current release): Left Central Surface', substruct('.','val', '{}',{1}, '.','val', '{}',{1}, '.','val', '{}',{1}, '.','val', '{}',{1}), substruct('()',{1}, '.','lhcentral', '()',{':'}));
         matlabbatch{2}.spm.tools.cat.stools.surfextract.GI = 1;     % Gyrification index
@@ -336,14 +361,7 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
         matlabbatch{2}.spm.tools.cat.stools.surfextract.nproc = 0;  % Blocking call to CAT12
     end
 
-    % Switch to CAT12 expert mode
-    cat12('expert');
-    % Hide CAT12 figures
-    set([findall(0, 'Type', 'Figure', 'Tag', 'Interactive'), ...
-         findall(0, 'Type', 'Figure', 'Tag', 'CAT'), ...
-         findall(0, 'Type', 'Figure', 'Tag', 'Graphics')], 'Visible', 'off');
-    % Run SPM batch
-    spm_jobman('initcfg');
+    % Run batch
     spm_jobman('run',matlabbatch);
     % Close CAT12 figures
     close([findall(0, 'Type', 'Figure', 'Tag', 'Interactive'), ...
@@ -352,10 +370,10 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
     % ===== PROJECT ATLASES =====
     TessLhFile = file_find(catDir, 'lh.central.*.gii', 2);
     if exist('cat_surf_map_atlas', 'file') && file_exist(TessLhFile)
-        % Get SPM dir
-        SpmDir = bst_get('SpmDir');
+        % Get CAT12 dir
+        CatDir = bst_fullfile(PlugCat.Path, PlugCat.SubFolder);
         % List of parcellations to project
-        AnnotLhFiles = file_find(bst_fullfile(SpmDir, 'toolbox', 'cat12', 'atlases_surfaces'), 'lh.*.annot', 2, 0);
+        AnnotLhFiles = file_find(bst_fullfile(CatDir, 'atlases_surfaces'), 'lh.*.annot', 2, 0);
         % Import atlases (cat_surf_map_atlas calls both hemispheres at once)
         for iAnnot = 1:length(AnnotLhFiles)
             [fAnnotPath, fAnnotName] = bst_fileparts(AnnotLhFiles{iAnnot});
@@ -373,6 +391,8 @@ function [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, 
     end
     % Delete temporary folder
     % file_delete(catDir, 1, 3);
+    % Remove logo
+    bst_plugin('SetProgressLogo', []);
     % Return success
     isOk = 1;
 end
@@ -392,20 +412,34 @@ function ComputeInteractive(iSubject, iAnatomy) %#ok<DEFNU>
     end
     nVertices = str2double(nVertices);
     % Ask for volume atlases
-    [isVolumeAtlases, isCancel] = java_dialog('confirm', ['Compute anatomical atlases?' 10 ...
-        '- CAT atlases: neuromorphometrics, lpba40, cobra, hammers' 10 ...
-        '- SPM non-linear MNI normalization'], 'Anatomical atlases');
+    [isVolumeAtlases, isCancel] = java_dialog('confirm', ['Compute anatomical parcellations?' 10 10 ...
+        ' - AAL3', 10 ...
+        ' - Anatomy v3', 10 ...
+        ' - CoBrALab' 10 ...
+        ' - Hammers' 10 ... 
+        ' - IBSR', 10 ...
+        ' - JulichBrain v2', 10 ...
+        ' - LPBA40' 10 ...
+        ' - Mori', 10 ...
+        ' - Neuromorphometrics' 10 ...
+        ' - Schaefer2018', 10 10], 'CAT12 MRI segmentation');
+    if isCancel
+        return
+    end
+    % Ask for cortical maps
+    [isExtraMaps, isCancel] = java_dialog('confirm', ['Compute cortical maps?' 10 10 ...
+        ' - Cortical thickness', 10 ...
+        ' - Gyrification index', 10 ...
+        ' - Sulcal depth', 10 10], 'CAT12 MRI segmentation');
     if isCancel
         return
     end
     % Open progress bar
     bst_progress('start', 'CAT12', 'CAT12 MRI segmentation...');
-    bst_progress('setimage', 'logo_cat.gif');
     % Run CAT12
     TpmNii = bst_get('SpmTpmAtlas');
     isInteractive = 1;
     isSphReg = 1;
-    isExtraMaps = 0;
     isCerebellum = 0;
     [isOk, errMsg] = Compute(iSubject, iAnatomy, nVertices, isInteractive, TpmNii, isSphReg, isVolumeAtlases, isExtraMaps, isCerebellum);
     % Error handling

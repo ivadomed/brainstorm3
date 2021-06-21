@@ -221,7 +221,7 @@ function [hFig, Handles] = CreateFigure(FigureId) %#ok<DEFNU>
     c.gridy = 3;    c.weighty = 0.7;
     Handles.jPanelCoordinates = gui_component('Panel', jPanelOptions, c);
     Handles.jPanelCoordinates.setLayout(java_create('java.awt.GridBagLayout'));
-    jBorder = BorderFactory.createTitledBorder('Coordinates (milimeters)');
+    jBorder = BorderFactory.createTitledBorder('Coordinates (millimeters)');
     jBorder.setTitleFont(bst_get('Font', 11));
     jBorder.setTitleColor(Color(.9,.9,.9));
     Handles.jPanelCoordinates.setBorder(jBorder);
@@ -308,7 +308,7 @@ function [hFig, Handles] = CreateFigure(FigureId) %#ok<DEFNU>
     c.gridx = 3;  c.gridy = 4;  Handles.jTextCoordMniY = gui_component('label', Handles.jPanelCoordinates, c, '...');
     c.gridx = 4;  c.gridy = 4;  Handles.jTextCoordMniZ = gui_component('label', Handles.jPanelCoordinates, c, '...');    
     c.gridx = 2;  c.gridy = 4;  c.gridwidth = 3;  
-    Handles.jTextNoMni = gui_component('label', Handles.jPanelCoordinates, c, '<HTML>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<FONT color="#E00000"><U>Click here to compute MNI transformation</U></FONT>',  [], '', @(h,ev)ComputeMniCoordinates(hFig));
+    Handles.jTextNoMni = gui_component('label', Handles.jPanelCoordinates, c, '<HTML>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<FONT color="#E00000"><U>Click here to compute MNI normalization</U></FONT>',  [], '', @(h,ev)ComputeMniCoordinates(hFig));
     
     % ===== VALIDATION BAR =====
     % Default constrains
@@ -899,23 +899,31 @@ function DisplayFigurePopup(hFig)
 %         jItem2.setSelected(MriOptions.InterpDownsample == 2);
 %         jItem3.setSelected(MriOptions.InterpDownsample == 3);
     end
-    % Anatomical atlas
-    AnatAtlas = getappdata(hFig, 'AnatAtlas');
-    if ~isempty(AnatAtlas)
-        [AtlasNames, AtlasFiles, iAtlas] = GetVolumeAtlases(hFig);
+    
+    % === ANATOMICAL ATLASES ===
+    [AtlasNames, AtlasFiles, iAtlas] = GetVolumeAtlases(hFig);
+    if ~isempty(AtlasNames)
         jMenuAtlas = gui_component('Menu', jPopup, [], 'Anatomical atlas', IconLoader.ICON_ANATOMY, [], []);
         for i = 1:length(AtlasNames)
-            if (i == length(AtlasNames))
-                jMenuAtlas.addSeparator();
-            end
             jCheck = gui_component('radiomenuitem', jMenuAtlas, [], AtlasNames{i}, [], [], @(h,ev)SetVolumeAtlas(hFig, AtlasNames{i}));
-            if (i == iAtlas)
+            if (length(iAtlas) == 1) && (i == iAtlas)
                 jCheck.setSelected(1);
+            end
+        end
+        % Show/Hide atlas
+        if (length(iAtlas) == 1) && ~strcmpi(AtlasNames{iAtlas}, 'none')
+            if isempty(TessInfo.DataSource.FileName)
+                jMenuAtlas.addSeparator();
+                gui_component('MenuItem', jMenuAtlas, [], 'Show atlas', [], [], @(h,ev)panel_surface('SetSurfaceData', hFig, 1, 'Anatomy', AtlasFiles{iAtlas}, 0));
+            elseif file_compare(AtlasFiles{iAtlas}, TessInfo.DataSource.FileName)
+                jMenuAtlas.addSeparator();
+                gui_component('MenuItem', jMenuAtlas, [], 'Hide atlas', [], [], @(h,ev)panel_surface('RemoveSurfaceData', hFig, 1));
             end
         end
         jPopup.addSeparator();
     end
-    % Set fiducials
+    
+    % === SET FIDUCIALS ===
     if Handles.isEditFiducials
         jMenuEdit = gui_component('Menu', jPopup, [], 'Edit fiducial positions', IconLoader.ICON_EDIT, [], []);
             gui_component('MenuItem', jMenuEdit, [], 'MRI coordinates', IconLoader.ICON_EDIT, [], @(h,ev)EditFiducials(hFig, 'mri'));
@@ -1356,11 +1364,15 @@ function UpdateCoordinates(sMri, Handles)
             value = TessInfo.OverlayCubeLabels(voxXYZ(1), voxXYZ(2), voxXYZ(3));
             iLabel = find([TessInfo.OverlayLabels{:,1}] == value);
             if ~isempty(iLabel)
+                strLabel = TessInfo.OverlayLabels{iLabel,2};
+                if ismember(lower(strLabel), {'background', 'bg', 'unknown'})
+                    strLabel = '-';
+                end
                 if TessInfo.isOverlayAtlas
-                    strValue = sprintf('%g: %s', value, TessInfo.OverlayLabels{iLabel,2});
+                    strValue = sprintf('%g: %s', value, strLabel);
                 else
                     mriValue = sMri.Cube(voxXYZ(1), voxXYZ(2), voxXYZ(3), 1);
-                    strValue = sprintf('%s  |  value=%g', TessInfo.OverlayLabels{iLabel,2}, mriValue);
+                    strValue = sprintf('%s  |  value=%g', strLabel, mriValue);
                 end
             else
                 strValue = sprintf('value=%g', value);
@@ -1394,9 +1406,15 @@ function UpdateCoordinates(sMri, Handles)
     end
     % === MNI coordinates system ===
     if ~isempty(mniXYZ)
-        Handles.jTextCoordMniX.setText(sprintf('x: %3.2f', mniXYZ(1) * 1000));
-        Handles.jTextCoordMniY.setText(sprintf('y: %3.2f', mniXYZ(2) * 1000));
-        Handles.jTextCoordMniZ.setText(sprintf('z: %3.2f', mniXYZ(3) * 1000));
+        if any(isnan(mniXYZ))
+            Handles.jTextCoordMniX.setText('-');
+            Handles.jTextCoordMniY.setText('-');
+            Handles.jTextCoordMniZ.setText('-');
+        else
+            Handles.jTextCoordMniX.setText(sprintf('x: %3.2f', mniXYZ(1) * 1000));
+            Handles.jTextCoordMniY.setText(sprintf('y: %3.2f', mniXYZ(2) * 1000));
+            Handles.jTextCoordMniZ.setText(sprintf('z: %3.2f', mniXYZ(3) * 1000));
+        end
         isMni = 1;
     else
         isMni = 0;
@@ -1774,6 +1792,14 @@ function [sMri, Handles] = LoadLandmarks(sMri, Handles)
             bst_error('Impossible to identify the SCS coordinate system with the specified coordinates.', 'MRI Viewer', 0);
         end
     end
+    % MNI method 
+    if isfield(sMri.NCS, 'y') && isfield(sMri.NCS, 'y_method') && ~isempty(sMri.NCS.y) && ~isempty(sMri.NCS.y_method)
+        Handles.jTitleMNI.setText(['MNI-' sMri.NCS.y_method ':']);
+    elseif isfield(sMri.NCS, 'R') && ~isempty(sMri.NCS.R)
+        Handles.jTitleMNI.setText('MNI-maff8:');
+    else
+        Handles.jTitleMNI.setText('MNI:');
+    end
     % Update landmarks display
     if Handles.isEditFiducials || Handles.isEeg
         UpdateVisibleLandmarks(sMri, Handles);
@@ -2124,12 +2150,11 @@ function UpdateVisibleLandmarks(sMri, Handles, slicesToUpdate)
         slicesToUpdate = ismember([1 2 3], slicesToUpdate);
     end
     slicesLoc = GetLocation('mri', sMri, Handles) .* 1000;
-    % Tolerance to display a point in a slice (in voxels)
-    nTol = 1;
     
+    % Tolerance to display a point in a slice => Voxel size (shows in at most 2 slices)
     function showPt(hPoint, locPoint)
         if ~isempty(locPoint) && ~isempty(hPoint) && all(ishandle(hPoint))
-            isVisible    = slicesToUpdate & (abs(locPoint - slicesLoc) <= nTol);
+            isVisible    = slicesToUpdate & (abs(locPoint - slicesLoc) < sMri.Voxsize);
             isNotVisible = slicesToUpdate & ~isVisible;
             set(hPoint(isVisible),    'Visible', 'on');
             set(hPoint(isNotVisible), 'Visible', 'off');
@@ -2716,7 +2741,7 @@ function FidFile = SaveFiducialsFile(sMri, FidFile, isComputeMni)
     if isempty(strFid)
         error('Fiducials are not set.');
     end
-    % Compute MNI transform: FreeSurfer only
+    % Compute MNI normalization
     if isComputeMni
         strFid = [strFid, 'isComputeMni = 1;', 10];
     end
@@ -2836,25 +2861,15 @@ end
 
 %% ===== COMPUTE MNI COORDINATES =====
 function ComputeMniCoordinates(hFig)
-    % Ask for confirmation
-    isConfirm = java_dialog('confirm', [...
-        'Displaying MNI coordinates requires the download of additional atlases' 10 ...
-        'and may take a lot of time or crash on some computers.' 10 10 ...
-        'Compute normalized coordinates now?'], 'Normalize anatomy');
-    if ~isConfirm
+    % Get loaded MRI
+    sMri = panel_surface('GetSurfaceMri', hFig);
+    % Compute normalization
+    sMri = process_mni_normalize('ComputeInteractive', sMri.FileName, [], 0);
+    if isempty(sMri)
         return;
     end
     % Get figure handles
     Handles = bst_figures('GetFigureHandles', hFig);
-    % Get MRI and figure handles
-    sMri = panel_surface('GetSurfaceMri', hFig);
-    % Compute normalization
-    [sMri, errMsg] = bst_normalize_mni(sMri.FileName);
-    % Error handling
-    if ~isempty(errMsg)
-        bst_error(errMsg, 'Compute MNI transformation', 0);
-        return;
-    end
     % Update coordinates display
     [sMri, Handles] = LoadLandmarks(sMri, Handles);
     % Update figure handles
@@ -2945,7 +2960,7 @@ function [AtlasNames, AtlasFiles, iAtlas] = GetVolumeAtlases(hFig)
     % Look for the atlas selected for this figure
     AnatAtlas = getappdata(hFig, 'AnatAtlas');
     if ~isempty(AnatAtlas)
-        iAtlas = find(strcmpi(AtlasNames, AnatAtlas));
+        iAtlas = find(strcmpi(AtlasNames, AnatAtlas), 1);
     end
 end
 
@@ -2968,20 +2983,32 @@ function SetVolumeAtlas(hFig, AnatAtlas)
     if isempty(AtlasNames)
         return;
     end
+    % Open progress bar
+    isProgress = bst_progress('isVisible');
+    if ~isProgress
+        bst_progress('start', 'MRI Viewer', 'Loading volume atlas...');
+    end
     % If atlas is not specified: pick the saved one, or Desikan-Killiany, or the first one
     if isempty(AnatAtlas)
         if ~isempty(MriOptions.DefaultAtlas) && ismember(MriOptions.DefaultAtlas, AtlasNames)
             AnatAtlas = MriOptions.DefaultAtlas;
         elseif ismember('aparc.DKTatlas+aseg', AtlasNames)
             AnatAtlas = 'aparc.DKTatlas+aseg';
-        elseif ismember('aparc.a2009s+aseg.mgz', AtlasNames)
-            AnatAtlas = 'aparc.a2009s+aseg.mgz';
+        elseif ismember('aparc.a2009s+aseg', AtlasNames)
+            AnatAtlas = 'aparc.a2009s+aseg';
+        elseif ismember('DKT', AtlasNames)
+            AnatAtlas = 'DKT';
+        elseif ismember('Destrieux', AtlasNames)
+            AnatAtlas = 'Destrieux';
         else
             AnatAtlas = AtlasNames{1};
         end
     end
     % Disable atlas
     if strcmpi(AnatAtlas, 'none')
+        if TessInfo(iTess).isOverlayAtlas
+            TessInfo = panel_surface('RemoveSurfaceData', hFig, 1);
+        end
         TessInfo(iTess).OverlayCubeLabels = [];
         TessInfo(iTess).OverlayLabels = [];
         TessInfo(iTess).isOverlayAtlas = 0;
@@ -2991,20 +3018,38 @@ function SetVolumeAtlas(hFig, AnatAtlas)
         iAtlas = find(strcmpi(AnatAtlas, AtlasNames));
         if isempty(iAtlas)
             disp(['BST> Error: Atlas "' AnatAtlas '" not available for this figure.']);
+            if ~isProgress
+                bst_progress('stop');
+            end
             return;
+        elseif (length(iAtlas) > 1)
+            duplicAtlas = unique(AtlasNames(iAtlas));
+            disp(['BST> Warning: Multiple atlases with identical name: ' sprintf('%s ', duplicAtlas{:})]);
+            iAtlas = iAtlas(1);
         end
-        % Load atlas volume
-        sMriAtlas = bst_memory('LoadMri', AtlasFiles{iAtlas});
-        if isempty(sMriAtlas)
-            return;
-        elseif isempty(sMriAtlas.Labels)
-            disp(['BST> Invalid atlas "' AnatAtlas '": does not contain any labels.']);
-            return;
+        % If the atlas is currently displayed: reload the overlay
+        if TessInfo(iTess).isOverlayAtlas
+            [isOk, TessInfo] = panel_surface('SetSurfaceData', hFig, 1, 'Anatomy', AtlasFiles{iAtlas}, 0);
+        % Otherwise: only load the labels
+        else
+            % Load atlas volume
+            sMriAtlas = bst_memory('LoadMri', AtlasFiles{iAtlas});
+            if isempty(sMriAtlas)
+                if ~isProgress
+                    bst_progress('stop');
+                end
+                return;
+            elseif isempty(sMriAtlas.Labels)
+                disp(['BST> Invalid atlas "' AnatAtlas '": does not contain any labels.']);
+                if ~isProgress
+                    bst_progress('stop');
+                end
+                return;
+            end
+            % Save label information
+            TessInfo(iTess).OverlayCubeLabels = sMriAtlas.Cube;
+            TessInfo(iTess).OverlayLabels = sMriAtlas.Labels;
         end
-        % Save label information
-        TessInfo(iTess).OverlayCubeLabels = sMriAtlas.Cube;
-        TessInfo(iTess).OverlayLabels = sMriAtlas.Labels;
-        TessInfo(iTess).isOverlayAtlas = 0;
     end
     % Save surface info
     setappdata(hFig, 'Surface', TessInfo);
@@ -3018,6 +3063,12 @@ function SetVolumeAtlas(hFig, AnatAtlas)
     Handles = bst_figures('GetFigureHandles', hFig);
     UpdateCoordinates(sMri, Handles);
     drawnow;
+    % Update figure name
+    bst_figures('UpdateFigureName', hFig);
+    % Close progress bar
+    if ~isProgress
+        bst_progress('stop');
+    end
 end
 
 

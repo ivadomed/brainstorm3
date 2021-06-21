@@ -125,13 +125,13 @@ switch (FileFormat)
         FileUnits = 'm';
         
     % ===== EEG ONLY =====
-    case {'BIDS-ORIG-MM', 'BIDS-MNI-MM'}
+    case {'BIDS-ORIG-MM', 'BIDS-OTHER-MM', 'BIDS-MNI-MM'}
         ChannelMat = in_channel_bids(ChannelFile, 0.001);
         FileUnits = 'm';
-    case {'BIDS-ORIG-CM', 'BIDS-MNI-CM'}
+    case {'BIDS-ORIG-CM', 'BIDS-OTHER-CM', 'BIDS-MNI-CM'}
         ChannelMat = in_channel_bids(ChannelFile, 0.01);
         FileUnits = 'm';
-    case {'BIDS-ORIG-M', 'BIDS-MNI-M'}
+    case {'BIDS-ORIG-M', 'BIDS-OTHER-M', 'BIDS-MNI-M'}
         ChannelMat = in_channel_bids(ChannelFile, 1);
         FileUnits = 'm';
         
@@ -342,16 +342,13 @@ if ismember(FileFormat, {'ASCII_XYZ_MNI', 'ASCII_NXYZ_MNI', 'ASCII_XYZN_MNI', 'I
         end
         % Load the MRI
         MriFile = file_fullpath(sSubject.Anatomy(1).FileName);
-        sMri = load(MriFile, 'SCS', 'NCS');
-        if ~isfield(sMri, 'SCS') || ~isfield(sMri.SCS, 'R') || isempty(sMri.SCS.R) || ~isfield(sMri, 'NCS') || ~isfield(sMri.NCS, 'R') || isempty(sMri.NCS.R)
+        sMri = in_mri_bst(MriFile);
+        if ~isfield(sMri, 'SCS') || ~isfield(sMri.SCS, 'R') || isempty(sMri.SCS.R) || ~isfield(sMri, 'NCS') || ((~isfield(sMri.NCS, 'R') || isempty(sMri.NCS.R)) && (~isfield(sMri.NCS, 'y') || isempty(sMri.NCS.y)))
             error(['The SCS and MNI transformations must be defined for this subject' 10 'in order to load sensor positions in MNI coordinates.']);
         end
-        % Compute the transformation MNI => SCS
-        RTmni2mri = inv([sMri.NCS.R, sMri.NCS.T./1000; 0 0 0 1]);
-        RTmri2scs = [sMri.SCS.R, sMri.SCS.T./1000; 0 0 0 1];
-        RTmni2scs = RTmri2scs * RTmni2mri;
-        % Convert all the coordinates
-        AllChannelMats = channel_apply_transf(ChannelMat, RTmni2scs, [], 1);
+        % Convert all the coordinates: MNI => SCS
+        fcnTransf = @(Loc)cs_convert(sMri, 'mni', 'scs', Loc')';
+        AllChannelMats = channel_apply_transf(ChannelMat, fcnTransf, [], 1);
         ChannelMat = AllChannelMats{1};
     end
     % Do not convert the positions to SCS

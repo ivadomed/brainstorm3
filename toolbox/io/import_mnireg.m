@@ -1,8 +1,10 @@
-function sMri = import_mnireg(MriFile, RegFile, RegInvFile)
+function sMri = import_mnireg(sMri, RegFile, RegInvFile, Method)
 % IMPORT_MNIREG: Add deformation fields for MNI normalization.
 %
+% USAGE:  sMri = import_mnireg(sMri, RegFile, RegInvFile, Method)
+%
 % INPUTS:
-%    - MriFile    : MRI file saved in the Brainstorm database
+%    - sMri       : Brainstorm MRI structure
 %    - RegFile    : SPM file y_*.nii, forward MNI deformation field
 %                   Used for coverting from MNI to MRI coordinates in cs_convert
 %                   The .nii must contain 3 volumes (X,Y,Z)
@@ -40,42 +42,29 @@ if (nargin < 2) || isempty(RegFile)
 end
 
 %% ===== READ FILES =====
-% Read destination MRI
-sMri = bst_memory('GetMri', file_short(MriFile));
-if isempty(sMri)
-    isLoadedHere = 1;
-    sMri = bst_memory('LoadMri', file_short(MriFile));
-else
-    isLoadedHere = 0;
-end
 % Read registration volumes
 if ~isempty(RegInvFile)
     sReg = in_mri(RegInvFile, 'ALL', 0, 0);
     sMri.NCS.iy = sReg.Cube;
+    sMri.NCS.iy(sMri.NCS.iy == 0) = NaN;
 else
     sMri.NCS.iy = [];
 end
 if ~isempty(RegFile)
     [sReg, vox2ras] = in_mri(RegFile, 'ALL', 0, 0);
     sMri.NCS.y = sReg.Cube;
+    sMri.NCS.y(sMri.NCS.y == 0) = NaN;
     sMri.NCS.y_vox2ras = vox2ras;
 else
     sMri.NCS.y = [];
 end
+% Save method
+sMri.NCS.y_method = Method;
 
 
 %% ===== COMPUTE DEFAULT FIDUCIALS =====
 if ~isempty(RegFile) && (~isfield(sMri.NCS, 'AC') || ~isfield(sMri.NCS, 'PC') || ~isfield(sMri.NCS, 'IH') || isempty(sMri.NCS.AC) || isempty(sMri.NCS.PC) || isempty(sMri.NCS.IH))
-    sMri = mri_set_default_fid(sMri, 'cat12');
-end
-
-
-%% ===== SAVE IN MRI =====
-% Save modified file
-bst_save(file_fullpath(MriFile), sMri, 'v7');
-% Unload surface to save it
-if isLoadedHere
-    bst_memory('UnloadMri', MriFile);
+    sMri = mri_set_default_fid(sMri, Method);
 end
 
 

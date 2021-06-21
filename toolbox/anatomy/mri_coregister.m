@@ -1,5 +1,5 @@
 function [MriFileReg, errMsg, fileTag, sMriReg] = mri_coregister(MriFileSrc, MriFileRef, Method, isReslice, isAtlas)
-% MRI_COREGISTER: Compute the MNI transformation on both input volumes, then register the first on the second.
+% MRI_COREGISTER: Compute the linear transformations on both input volumes, then register the first on the second.
 %
 % USAGE:  [MriFileReg, errMsg, fileTag] = mri_coregister(MriFileSrc, MriFileRef, Method, isReslice)
 %            [sMriReg, errMsg, fileTag] = mri_coregister(sMriSrc,    sMriRef, ...)
@@ -37,7 +37,7 @@ function [MriFileReg, errMsg, fileTag, sMriReg] = mri_coregister(MriFileSrc, Mri
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Authors: Francois Tadel, 2016-2020
+% Authors: Francois Tadel, 2016-2021
 
 % ===== LOAD INPUTS =====
 % Parse inputs
@@ -88,16 +88,17 @@ switch lower(Method)
     
     % ===== METHOD: SPM =====
     case 'spm'
-        % === SPM INITIALIZATION ===
-        % Check SPM installation
-        bst_spm_init();
-        % Check if SPM is in the path
-        if ~exist('spm_jobman', 'file')
-            errMsg = 'SPM must be in the Matlab path to use this feature.';
+        % Initialize SPM
+        [isInstalled, errMsg] = bst_plugin('Install', 'spm12');
+        if ~isInstalled
             return;
         end
+        bst_plugin('SetProgressLogo', 'spm12');
         
         % === SAVE FILES IN TMP FOLDER ===
+        bst_progress('text', 'Saving temporary files...');
+        % Empty temporary folder
+        gui_brainstorm('EmptyTempFolder');
         % Save source MRI in .nii format
         NiiSrcFile = bst_fullfile(bst_get('BrainstormTmpDir'), 'spm_src.nii');
         out_mri_nii(sMriSrc, NiiSrcFile);
@@ -106,6 +107,7 @@ switch lower(Method)
         out_mri_nii(sMriRef, NiiRefFile);
 
         % === CALL SPM COREGISTRATION ===
+        bst_progress('text', 'Calling SPM batch...');
         % Code initially coming from Olivier David's ImaGIN_anat_spm.m function
         % Initial translation according to centroids
         % Reference volume
@@ -156,6 +158,8 @@ switch lower(Method)
         [sMriReg, vox2ras] = in_mri(NiiRegFile, 'ALL', 0, 0);
         % Output file tag
         fileTag = '_spm';
+        % Remove logo
+        bst_plugin('SetProgressLogo', []);
         
         % === UPDATE FIDUCIALS ===
         if isReslice
@@ -177,11 +181,11 @@ switch lower(Method)
         % === COMPUTE MNI TRANSFORMATIONS ===
         % Source MRI
         if ~isfield(sMriSrc, 'NCS') || ~isfield(sMriSrc.NCS, 'R') || ~isfield(sMriSrc.NCS, 'T') || isempty(sMriSrc.NCS.R) || isempty(sMriSrc.NCS.T)
-            [sMriSrc,errMsg] = bst_normalize_mni(sMriSrc);
+            [sMriSrc,errMsg] = bst_normalize_mni(sMriSrc, 'maff8');
         end
         % Reference MRI
         if ~isfield(sMriRef, 'NCS') || ~isfield(sMriRef.NCS, 'R') || ~isfield(sMriRef.NCS, 'T') || isempty(sMriRef.NCS.R) || isempty(sMriRef.NCS.T)
-            [sMriRef,errMsg] = bst_normalize_mni(sMriRef);
+            [sMriRef,errMsg] = bst_normalize_mni(sMriRef, 'maff8');
         end
         % Handle errors
         if ~isempty(errMsg)
@@ -268,7 +272,7 @@ if isUpdateScs || isUpdateNcs
         sMriReg.SCS.R = Tscs(1:3,1:3);
         sMriReg.SCS.T = Tscs(1:3,4);
     end
-    % Transform the reference SCS coordinates if possible
+    % Transform the reference NCS coordinates if possible
     if isUpdateNcs && ~isempty(TransfReg) && ~isempty(TransfRef) && isfield(sMriRef, 'NCS') && all(isfield(sMriRef.NCS, {'AC','PC','IH','T','R'})) && ~isempty(sMriRef.NCS.AC) && ~isempty(sMriRef.NCS.PC) && ~isempty(sMriRef.NCS.IH) && ~isempty(sMriRef.NCS.R) && ~isempty(sMriRef.NCS.T)
         % Apply transformation: reference MRI => SPM RAS/world => registered MRI
         Transf = inv(TransfReg) * (TransfRef);
