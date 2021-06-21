@@ -1099,7 +1099,7 @@ function UpdateSurfaceProperties()
     % Enable/disable controls
     isOverlay = ~isempty(TessInfo(iSurface).DataSource.FileName);
     isOverlayStat = isOverlay && ismember(file_gettype(TessInfo(iSurface).DataSource.FileName), {'presults', 'pdata', 'ptimefreq'});
-    isOverlayLabel = isOverlay && ~isempty(TessInfo(iSurface).OverlayLabels);
+    isOverlayLabel = isOverlay && TessInfo(iSurface).isOverlayAtlas;
     gui_enable([ctrl.jLabelDataAlphaTitle, ctrl.jSliderDataAlpha, ctrl.jLabelDataAlpha], isOverlay, 0);
     gui_enable([ctrl.jLabelSizeTitle, ctrl.jLabelSize, ctrl.jSliderSize], isOverlay && ~isOverlayLabel, 0);
     gui_enable([ctrl.jLabelThreshTitle, ctrl.jSliderDataThresh, ctrl.jLabelDataThresh], isOverlay && ~isOverlayStat && ~isOverlayLabel, 0);
@@ -1726,6 +1726,10 @@ function [isOk, TessInfo] = UpdateSurfaceData(hFig, iSurfaces)
                     % Replace values with clusters
                     if ~isempty(sClusters)
                         mask = 0 * TessInfo(iTess).Data;
+                        % If displaying the second of a replicated time point, which is not available in the clusters mask: ignore the time information
+                        if (length(iTime) == 1) && (iTime == 2) && (size(sClusters(1).mask,2) == 1)
+                            iTime = 1;
+                        end
                         % Plot each cluster
                         for iClust = 1:length(sClusters)
                             mask = mask | sClusters(iClust).mask(:, iTime, GlobalData.UserFrequencies.iCurrentFreq);

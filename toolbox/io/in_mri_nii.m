@@ -93,65 +93,22 @@ switch(lower(extension))
         % Read image file
         [fid, message] = fopen(imgFilename, 'r', byteOrder);
         if fid == -1, disp(sprintf('in_mri_nii : %s', message)); return; end
-        data = nifti_read_img(fid, hdr);
+        data = nifti_read_img(fid, hdr, 0);
         fclose(fid);
         
     otherwise
         error('Unsupported file format');
 end
 
-
-% ===== UNITS =====
-% === NIfTI UNITS ===
-if ~isempty(hdr.nifti)
-    if (hdr.nifti.xyzt_units ~= 0)
-        % Convert spatial units
-        xyzunits = bitand(hdr.nifti.xyzt_units,7); % 0x7
-        switch(xyzunits)
-            case 1, xyzscale = 1000.000; % meters
-            case 2, xyzscale =    1.000; % mm
-            case 3, xyzscale =     .001; % microns
-        end
-        if (xyzunits ~= 1)
-            hdr.dim.pixdim(2:4) = hdr.dim.pixdim(2:4) * xyzscale;
-            hdr.nifti.srow_x = hdr.nifti.srow_x * xyzscale;
-            hdr.nifti.srow_y = hdr.nifti.srow_y * xyzscale;
-            hdr.nifti.srow_z = hdr.nifti.srow_z * xyzscale;
-        end
-        % Convert temporal units
-        tunits = bitand(hdr.nifti.xyzt_units,3*16+8); % 0x38 
-        switch(tunits)
-            case  8, tscale = 1000.000; % seconds
-            case 16, tscale =    1.000; % msec
-            case 32, tscale =     .001; % microsec
-            otherwise,  tscale = 0;
-        end
-        if (tscale ~= 1)
-            hdr.dim.pixdim(5) = hdr.dim.pixdim(5) * tscale;
-        end
-        % Change value in xyzt_units to reflect scale change
-        hdr.nifti.xyzt_units = bitor(2,16); % 2=mm, 16=msec
-    end
-% === ANALYZE UNITS ===
-else
-    switch (deblank(hdr.dim.vox_units))
-        case 'mm'
-            factor = 1;
-        case 'm'
-            factor = 1000;
-        otherwise
-            factor = 1;
-    end
-    hdr.dim.pixdim(2:4) = (double(hdr.dim.pixdim(2:4)) * factor);
-end
+% ===== OUTPUT STRUCTURE =====
 % Voxel size
 Voxsize = abs(hdr.dim.pixdim(2:4));
-
-% ===== CREATE BRAINSTORM STRUCTURE =====
-sMri = struct('Cube',   data, ...
-             'Voxsize', Voxsize, ...
-             'Comment', 'MRI', ...
-             'Header',  hdr);
+% Brainstorm MRI structure
+sMri = db_template('mrimat');
+sMri.Cube    = data;
+sMri.Voxsize = Voxsize;
+sMri.Comment = 'MRI';
+sMri.Header  = hdr;
 
 % ===== NIFTI ORIENTATION =====
 % Apply orientation to the volume
@@ -291,6 +248,49 @@ function hdr = nifti_read_hdr(fid, isReadMulti)
         error('Unknown error');
     end
 
+    % ===== NIFTI UNITS =====
+    if isNifti
+        if (nifti.xyzt_units ~= 0)
+            % Convert spatial units
+            xyzunits = bitand(nifti.xyzt_units,7); % 0x7
+            switch(xyzunits)
+                case 1, xyzscale = 1000.000; % meters
+                case 2, xyzscale =    1.000; % mm
+                case 3, xyzscale =     .001; % microns
+            end
+            if (xyzunits ~= 1)
+                dim.pixdim(2:4) = dim.pixdim(2:4) * xyzscale;
+                nifti.srow_x = nifti.srow_x * xyzscale;
+                nifti.srow_y = nifti.srow_y * xyzscale;
+                nifti.srow_z = nifti.srow_z * xyzscale;
+            end
+            % Convert temporal units
+            tunits = bitand(nifti.xyzt_units,3*16+8); % 0x38 
+            switch(tunits)
+                case  8, tscale = 1000.000; % seconds
+                case 16, tscale =    1.000; % msec
+                case 32, tscale =     .001; % microsec
+                otherwise,  tscale = 0;
+            end
+            if (tscale ~= 1)
+                dim.pixdim(5) = dim.pixdim(5) * tscale;
+            end
+            % Change value in xyzt_units to reflect scale change
+            nifti.xyzt_units = bitor(2,16); % 2=mm, 16=msec
+        end
+    % === ANALYZE UNITS ===
+    else
+        switch (deblank(dim.vox_units))
+            case 'mm'
+                factor = 1;
+            case 'm'
+                factor = 1000;
+            otherwise
+                factor = 1;
+        end
+        dim.pixdim(2:4) = (double(dim.pixdim(2:4)) * factor);
+    end
+
     % ===== NIFTI ORIENTATION =====
     if ~isempty(nifti)
         % Sform matrix
@@ -342,15 +342,19 @@ function hdr = nifti_read_hdr(fid, isReadMulti)
         nifti.qform = [qMdc*D P0; 0 0 0 1];
 
         % Build final transformation matrix
-        if (nifti.sform_code ~= 0) && ~isempty(nifti.sform) && ~isequal(nifti.sform(1:3,1:3),zeros(3)) && ~isequal(nifti.sform(1:3,1:3),eye(3))
+        % For SFORM, accept only NIFTI_XFORM_ALIGNED_ANAT (2)
+        if (nifti.sform_code == 2) && ~isempty(nifti.sform) && ~isequal(nifti.sform(1:3,1:3),zeros(3)) && ~isequal(nifti.sform(1:3,1:3),eye(3))
             nifti.vox2ras = nifti.sform;
         elseif (nifti.qform_code ~= 0) && ~isempty(nifti.qform) && ~isequal(nifti.qform(1:3,1:3),zeros(3)) && ~isequal(nifti.qform(1:3,1:3),eye(3))
             nifti.vox2ras = nifti.qform;
         % Same thing, but accept identity rotations
-        elseif (nifti.sform_code ~= 0) && ~isempty(nifti.sform) && ~isequal(nifti.sform(1:3,1:3),zeros(3))
+        elseif (nifti.sform_code == 2) && ~isempty(nifti.sform) && ~isequal(nifti.sform(1:3,1:3),zeros(3))
             nifti.vox2ras = nifti.sform;
         elseif (nifti.qform_code ~= 0) && ~isempty(nifti.qform) && ~isequal(nifti.qform(1:3,1:3),zeros(3))
             nifti.vox2ras = nifti.qform;
+        % Last chance: accept other SFORM codes
+        elseif (nifti.sform_code ~= 0) && ~isempty(nifti.sform)
+            nifti.vox2ras = nifti.sform;
         else
             nifti.vox2ras = [];
         end

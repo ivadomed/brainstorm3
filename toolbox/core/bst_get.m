@@ -11,10 +11,12 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('BrainstormTmpDir', isForcedDefault)   : User DEFAULT brainstorm temporary directory (<home>/.brainstorm/tmp/)
 %    - bst_get('BrainstormDocDir')      : Doc folder folder of the Brainstorm distribution (may vary in compiled versions)
 %    - bst_get('BrainstormDefaultsDir') : Defaults folder folder of the Brainstorm distribution (may vary in compiled versions)
+%    - bst_get('BrainstormPluginDir')   : User home directory for brainstorm (<home>/.brainstorm/)
 %    - bst_get('UserReportsDir')        : User reports directory (<home>/.brainstorm/reports/)
 %    - bst_get('UserMexDir')            : User temporary directory (<home>/.brainstorm/mex/)
 %    - bst_get('UserProcessDir')        : User custom processes directory (<home>/.brainstorm/process/)
 %    - bst_get('UserDefaultsDir')       : User defaults directory (<home>/.brainstorm/defaults/)
+%    - bst_get('UserPluginsDir')        : User plugins directory (<home>/.brainstorm/plugins/)
 %    - bst_get('BrainstormDbFile')      : User brainstorm.mat file (<home>/.brainstorm/brainstorm.mat)
 %    - bst_get('BrainstormDbDir')       : User database directory (contains all the brainstorm protocols)
 %    - bst_get('DirDefaultSubject')     : Directory name of the default subject
@@ -27,8 +29,7 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('LastUsedDirs')          : Structure with all the last used directories (last used)
 %    - bst_get('OsType', isMatlab=1)    : Get a string that describes the operating system (if isMatlab=1 return the Matlab/JVM platform, else return the real host system)
 %    - bst_get('FileFilters', DataType) : Get the list of import filters for a specific data type
-%    - bst_get('FieldTripDir')          : Full path to a local installation of FieldTrip
-%    - bst_get('SpmDir')                : Full path to a local installation of SPM
+%    - bst_get('PluginCustomPath')      : Full custom path to all plugins
 %    - bst_get('BrainSuiteDir')         : Full path to a local installation of BrainSuite
 %    - bst_get('SpmTpmAtlas')           : Full path to the SPM atlas TPM.nii
 %    - bst_get('PythonExe')             : Path to the python executable
@@ -201,7 +202,6 @@ function [argout1, argout2, argout3, argout4, argout5] = bst_get( varargin )
 %    - bst_get('JFrame', hFig)            : Get the underlying java frame for a Matlab figure
 %    - bst_get('LastPsdDisplayFunction')  : Display option of measure for spectrum (log, power, magnitude, etc.)
 %    - bst_get('PlotlyCredentials')       : Get the credentials and URL to connect to plot.ly server
-%    - bst_get('MffJarFile')              : Get the path to the MFF JAR file and whether it exists
 %    - bst_get('ExportBidsOptions')       : Additional metadata for BIDS export
 %
 % SEE ALSO bst_set
@@ -278,7 +278,7 @@ switch contextName
             Release = str_vers(ipar(1)+1:ipar(2)-1);
         end
         argout1 = Release;
-                     
+
     case 'JavaVersion'
         strver = char(java.lang.System.getProperty('java.version'));
         iDot = find(strver == '.');
@@ -450,6 +450,16 @@ switch contextName
             end
         end
         argout1 = defDir;
+        
+    case 'UserPluginsDir'
+        pluginsDir = bst_fullfile(bst_get('BrainstormUserDir'), 'plugins');
+        if ~isdir(pluginsDir)
+            res = mkdir(pluginsDir);
+            if ~res
+                error(['Cannot create plugins directory: "' pluginsDir '".']); 
+            end
+        end
+        argout1 = pluginsDir;
         
     case 'BrainstormDbFile'
         argout1 = bst_fullfile(bst_get('BrainstormUserDir'), 'brainstorm.mat');
@@ -2741,24 +2751,9 @@ switch contextName
             argout1 = 'butterfly';
         end 
 
-    case 'FieldTripDir'
-        if isfield(GlobalData, 'Preferences') && isfield(GlobalData.Preferences, 'FieldTripDir') && ~isempty(GlobalData.Preferences.FieldTripDir)
-            if isdir(GlobalData.Preferences.FieldTripDir) && file_exist(bst_fullfile(GlobalData.Preferences.FieldTripDir, 'ft_defaults.m'))
-                argout1 = GlobalData.Preferences.FieldTripDir;
-            else
-                argout1 = [];
-            end
-        else
-            argout1 = [];
-        end
-        
-    case 'SpmDir'
-        if isfield(GlobalData, 'Preferences') && isfield(GlobalData.Preferences, 'SpmDir') && ~isempty(GlobalData.Preferences.SpmDir)
-            if isdir(GlobalData.Preferences.SpmDir) && file_exist(bst_fullfile(GlobalData.Preferences.SpmDir, 'spm.m'))
-                argout1 = GlobalData.Preferences.SpmDir;
-            else
-                argout1 = [];
-            end
+    case 'PluginCustomPath'
+        if isfield(GlobalData, 'Preferences') && isfield(GlobalData.Preferences, 'PluginCustomPath') && ~isempty(GlobalData.Preferences.PluginCustomPath)
+            argout1 = GlobalData.Preferences.PluginCustomPath;
         else
             argout1 = [];
         end
@@ -2790,20 +2785,22 @@ switch contextName
             return;
         end
         % If it does not exist: check in spm12 folder
-        spmDir = bst_get('SpmDir');
-        if ~isempty(spmDir)
-            tpmSpm = bst_fullfile(spmDir, 'tpm', 'TPM.nii');
+        PlugSpm = bst_plugin('GetInstalled', 'spm12');
+        if ~isempty(PlugSpm)
+            tpmSpm = bst_fullfile(PlugSpm.Path, PlugSpm.SubFolder, 'tpm', 'TPM.nii');
             if file_exist(tpmSpm)
                 argout1 = tpmSpm;
                 disp(['SPM12 template found: ' tpmSpm]);
                 return;
             end
+        else
+            tpmSpm = '';
         end
         % Not found...
         disp('SPM12 template not found in any of the following folders:');
         disp([' - ' tpmUser]);
         disp([' - ' tpmDistrib]);
-        if ~isempty(spmDir)
+        if ~isempty(tpmSpm)
             disp([' - ' tpmSpm]);
         end
         % Return the preferred location: .brainstorm/defaults/spm/TPM.nii
@@ -2918,7 +2915,7 @@ switch contextName
         
     case 'DefaultFormats'
         defPref = struct(...
-            'AnatIn',      '', ...
+            'AnatIn',      'FreeSurfer', ...
             'ChannelIn',   '', ...
             'ChannelOut',  '', ...
             'DataIn',      'CTF', ...
@@ -3154,7 +3151,7 @@ switch contextName
         if isempty(argout1.Freqs)
             argout1.Freqs = defPref.Freqs;
         end
-        if ~isempty(argout1.FreqBands) && ~ischar(argout1.FreqBands{1,2})
+        if ~isempty(argout1.FreqBands) && (size(argout1.FreqBands,2) == 3) && ~ischar(argout1.FreqBands{1,2})
             argout1.FreqBands = defPref.FreqBands;
         end
         
@@ -3290,7 +3287,35 @@ switch contextName
                        'Labels', [])], ...
             'iMontage',     1);
         argout1 = FillMissingFields(contextName, defPref);
-        
+    
+    case 'ConnectGraphOptions'
+        defPref = struct(...
+            'LobeFullLabel', 1, ... 
+            'TextDisplayMode', [1 2], ...
+            'LabelSize', 7, ...  
+            'NodeSize', 5, ...         
+            'LinkSize', 1.5, ...           
+            'BgColor', [0 0 0], ...        
+            'HierarchyNodeIsVisible', 1);
+        % If we have an additional argument, get the default values
+        if nargin > 1
+            argout1 = defPref;
+        % Otherwise, get the saved values
+        else
+            savedValues = FillMissingFields(contextName, defPref);
+            
+            % if any of the fields are [], replace by default value
+            % do it here to avoid touching the common FillMissingFields
+            % function, as other tools may actually want to set [] as desired property           
+            fields = fieldnames(savedValues);
+            for i=1:numel(fields)
+                if(isempty(savedValues.(fields{i})))
+                    savedValues.(fields{i}) = defPref.(fields{i});
+                end
+            end
+            argout1 = savedValues;
+        end
+    
     case 'NodelistOptions'
         defPref = struct(...
             'String', '', ...         % What to search for
@@ -3328,10 +3353,6 @@ switch contextName
         catch
             argout3 = '';
         end
-    
-    case 'MffJarFile'
-        argout1 = bst_fullfile(bst_get('BrainstormUserDir'), 'mffmatlabio', 'MFF-1.2.2-jar-with-dependencies.jar');
-        argout2 = exist(argout1, 'file') == 2;
 
     case 'KlustersExecutable'
         if isfield(GlobalData, 'Preferences') && isfield(GlobalData.Preferences, 'KlustersExecutable')
@@ -3587,6 +3608,7 @@ switch contextName
                     {'.evl','.txt'},   'Elekta-Neuromag Graph (*.evl;*.txt)',  'GRAPH'; ...
                     {'.txt','.mat'},   'FieldTrip trial definition (*.txt;*.mat)', 'TRL'; ...
                     {'.trg'},          'KRISS MEG (*.trg)',             'KDF'; ...
+                    {'.evt'},          'Micromed (*.evt)',              'MICROMED'; ...
                     {'.ev2'},          'Neuroscan (*.ev2)',             'NEUROSCAN'; ...
                     {'.txt'},          'Nicolet export (*.txt)',        'NICOLET'; ...
                     {'timestamps.npy'},'Open Ephys (timestamps.npy)', 'OEBIN'; ...
@@ -3614,7 +3636,7 @@ switch contextName
                     {'.elc'},                      'EEG: ANT ASA/Xensor (*.elc)',         'XENSOR'; ...
                     {'.sfp','.elp','.ela','.eps'}, 'EEG: BESA (*.sfp;*.elp;*.eps/*.ela)', 'BESA'; ...
                     {'.bvef','.bvct','.txt'},      'EEG: BrainVision electrode file (*.bvef,*.bvct,*.txt)', 'BRAINVISION'; ...
-                    {'.tsv'},                      'EEG: BIDS electrodes.tsv, subject space mm (*.tsv)',    'BIDS-ORIG-MM'; ...
+                    {'.tsv'},                      'EEG: BIDS electrodes.tsv, subject space mm (*.tsv)',    'BIDS-OTHER-MM'; ...
                     {'.tsv'},                      'EEG: BIDS electrodes.tsv, MNI space mm (*.tsv)',        'BIDS-MNI-MM'; ...
                     {'.els','.xyz'},               'EEG: Cartool (*.els;*.xyz)',          'CARTOOL'; ...
                     {'.eeg'},                      'EEG: MegDraw (*.eeg)',                'MEGDRAW'; ...
