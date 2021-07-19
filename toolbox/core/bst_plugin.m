@@ -275,6 +275,19 @@ function PlugDesc = GetSupported(SelPlug)
     PlugDesc(end).RequiredPlugs  = {'brainentropy'};
     PlugDesc(end).MinMatlabVer   = 803;   % 2014a
     
+    % === DEEP LEARNING: IVADOMED ===
+    PlugDesc(end+1)              = GetStruct('ivadomed');
+    PlugDesc(end).Version        = '2.7.4';
+    PlugDesc(end).Category       = 'Deep Learning';
+    PlugDesc(end).AutoUpdate     = 0;
+    PlugDesc(end).URLzip         = 'https://github.com/ivadomed/ivadomed/archive/refs/heads/master.zip';
+    PlugDesc(end).URLinfo        = 'https://ivadomed.org/en/latest/index.html';
+    PlugDesc(end).TestFile       = 'setup.py';
+    PlugDesc(end).ReadmeFile     = 'README.md';
+    PlugDesc(end).CompiledStatus = 0;
+    %PlugDesc(end).GetVersionFcn  = 'bst_getoutvar(2, @spm, ''Ver'')';
+    %PlugDesc(end).LoadedFcn      = 'spm(''defaults'',''EEG'');';
+    
     % === FIELDTRIP ===
     PlugDesc(end+1)              = GetStruct('fieldtrip');
     PlugDesc(end).Version        = 'latest';
@@ -428,11 +441,16 @@ function [Version, URLzip] = GetVersionOnline(PlugName, isCache)
                 disp(['BST> Checking latest online version for ' PlugName '...']);
                 str = bst_webread('http://neuroimage.usc.edu/bst/getversion_duneuro.php');
                 Version = str(1:6);
-           case 'nirstorm'
+            case 'nirstorm'
                 bst_progress('text', ['Checking latest online version for ' PlugName '...']);
                 disp(['BST> Checking latest online version for ' PlugName '...']);
                 str = bst_webread('https://raw.githubusercontent.com/Nirstorm/nirstorm/master/bst_plugin/VERSION');
                 Version = strtrim(str(9:end));
+            case 'ivadomed'
+                bst_progress('text', ['Checking latest online version for ' PlugName '...']);
+                disp(['BST> Checking latest online version for ' PlugName '...']);
+                str = bst_webread('https://raw.githubusercontent.com/ivadomed/ivadomed/master/ivadomed/version.txt');
+                Version = strtrim(str);
             otherwise
                 return;
         end

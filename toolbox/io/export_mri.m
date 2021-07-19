@@ -1,4 +1,4 @@
-function export_mri( BstMriFile, OutputMriFile )
+function export_mri( BstMriFile, OutputMriFile, nifti_matrix)
 % EXPORT_MRI: Export a MRI to one of the supported file formats.
 %
 % USAGE:  export_mri( BstMriFile, OutputMriFile=[ask] )
