@@ -214,9 +214,7 @@ function OutputFiles = Run(sProcess, sInputs)
     % The following works on Matlab R2021a - I think older versions
     % need another command to squeeze the empty structure entries - TODO
     sInputs(inputs_to_remove) = [];
-    
-    %% Get all subjects to create the participants.tsv file
-    
+        
     % === OUTPUT STUDY ===
     
     % Prepare parallel pool, if requested
@@ -234,18 +232,30 @@ function OutputFiles = Run(sProcess, sInputs)
         poolobj = [];
     end
     
+    %% Open a figure window to inherit properties
+    
+%     [hFig, iDS, iFig] = view_topography(sInput.FileName, 'MEG', '2DSensorCap');        
+%     [hFig, iFig, iDS] = bst_figures('GetFigure', GlobalData.DataSet.Figure.hFigure);
+%     set(hFig, 'Visible', 'off');
+%     
+%     
+%     bst_get('Layout', 'WindowManager')
+%     
+    figures_struct = struct('FigureObject',[], 'Status', [], 'Trialfilenames', {sInputs.FileName});
+    
+    
     %% Convert the input trials to NIFTI files
     filenames = cell(length(sInputs),1);
     subjects = cell(length(sInputs),1);
     if isempty(poolobj)
         for iFile = 1:length(sInputs)
             sInput = sInputs(iFile);
-            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
+            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile, figures_struct);
         end
     else
         parfor iFile = 1:length(sInputs)
             sInput = sInputs(iFile);
-            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
+            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile, figures_struct);
         end
     end
         
@@ -256,10 +266,11 @@ function OutputFiles = Run(sProcess, sInputs)
     export_participants_json()
     export_dataset_description()
     export_readme()
+    
 end
 
 
-function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iEpoch)
+function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile, figures_struct)
 %   % Ignoring the bad sensors in the interpolation, so some values will be interpolated from the good sensors
 %   WExtrap = GetInterpolation(iDS, iFig, TopoInfo, Vertices, Faces, bfs_center, bfs_radius, chan_loc(selChan,:));
 % 
@@ -287,9 +298,6 @@ function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, w
         %[x, time_out] = process_resample('Compute', x, time_in, NewRate)
         [dataMat.F, dataMat.Time] = process_resample('Compute', dataMat.F, dataMat.Time, wanted_Fs);
     end
-    
-    
-    
     
 %     %% CHANGE THE COLORMAP DISPLAYED ON THE BOTTOM LEFT
 %     % Get colormap type
@@ -324,13 +332,11 @@ function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, w
     
     %% Gather the topography slices to a single 3d matrix
     % Here the time dimension is the 3rd dimension
-    open_close_topography_window(sInput, 'open')
-    NIFTI = channelMatrix2pixelMatrix(dataMat.F, dataMat.Time, selectedChannels);
-    open_close_topography_window(sInput, 'close')
+    figures_struct = open_close_topography_window(sInput, 'open', iFile, figures_struct)
+    NIFTI = channelMatrix2pixelMatrix(dataMat.F, dataMat.Time, selectedChannels, iFile, figures_struct);
+%     figures_struct = open_close_topography_window(sInput, 'close', iFile, figures_struct)
 
-    %% Get the output filename and 
-    BstMriFile = '/home/nas/Consulting/brainstorm_db/ivado@brainstorm/anat/@default_subject/subjectimage_T1.mat';
-    
+    %% Get the output filename and     
     % Use default anatomy (IS THIS SOMETHING IMPORTANT TO CONSIDER CHANGING - MAYBE FOR SOURCE LOCALIZATION ON MEG STUDIES???)
     % TODO - CONSIDER ADDING THE INDIVIDUAL ANATOMY HERE
     sMri = load(bst_fullfile(bst_get('BrainstormHomeDir'), 'defaults', 'anatomy', 'ICBM152', 'subjectimage_T1.mat'));
@@ -348,20 +354,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, w
     % No special characters to avoid messing up with the IVADOMED importer
     subject = str_remove_spec_chars(sInput.SubjectName);
     session = str_remove_spec_chars(sInput.Condition);
-    trial   = str_remove_spec_chars(sInput.Comment);  % Use this on the filename
-                       
-    % Hack to accommodate ivadomed derivative selection:
-    % https://github.com/ivadomed/ivadomed/blob/master/ivadomed/loader/utils.py # L812
-    letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; % This hack accommodates up to 240 trials - for more find another solution 
-                                            % - like double letters (not the same though or the same IVADOMED loader problem would occur)
-    iLetter = floor(iEpoch/10);
-    
-    if iLetter == 0
-        iEpoch = num2str(iEpoch);
-    else
-        iEpoch = [letters(iLetter) num2str(iEpoch)];
-    end
-    
+    trial   = str_remove_spec_chars(sInput.Comment);  % TODO - THE UNIQUE LIST OF TRIAL LABELS NEEDS TO BE ADDED ON THE IVADOMED CONFIG.JSON FILE TO BE INCLUDED IN TRAINING/VALIDATION
     
     % Get output filename
     if sProcess.options.bidsFolders.Value==1
@@ -391,13 +384,10 @@ function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, w
     % In no eventlabel is selected, the annotation will be based on the time-window
     % selected, with the TIMING MATCHING THE TRIAL-TIME VALUES
     
-    F_derivative = ones(size(dataMat.F));  % I start with ones instead of zeros. The annotations will be marked as 0.
-                                           % The reason for this is that
-                                           % the saved images are inverted
-    
+    F_derivative = ones(size(dataMat.F));    
                                            
     iAllSelectedEvents = find(ismember({dataMat.Events.label}, strsplit(sProcess.options.eventname.Value,{',',' '})));
-    annotationValue = 1;
+    annotationValue = 0;
         
     if ~isempty(iAllSelectedEvents)  % Selected event
         for iSelectedEvent = iAllSelectedEvents
@@ -442,9 +432,9 @@ function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, w
         F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
     end
         
-    open_close_topography_window(sInput, 'open')
-    NIFTI_derivative = channelMatrix2pixelMatrix(F_derivative, dataMat.Time, selectedChannels);
-    open_close_topography_window(sInput, 'close')
+    figures_struct = open_close_topography_window(sInput, 'open', iFile, figures_struct)
+    NIFTI_derivative = channelMatrix2pixelMatrix(F_derivative, dataMat.Time, selectedChannels, iFile, figures_struct);
+    figures_struct = open_close_topography_window(sInput, 'close', iFile, figures_struct)
 
     
     % Set the values to 0 and 1 for the annotations
@@ -487,7 +477,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, w
     
 end
 
-function open_close_topography_window(sInput, action)
+function figures_struct = open_close_topography_window(sInput, action, iFile, figures_struct)
     global GlobalData
     if strcmp(action, 'open')
         %% Open a window to inherit properties
@@ -500,11 +490,19 @@ function open_close_topography_window(sInput, action)
         
             % TODO - GET MODALITY AUTOMATICALLY
         [hFig, iDS, iFig] = view_topography(sInput.FileName, 'MEG', '2DSensorCap');        
-        [hFig, iFig, iDS] = bst_figures('GetFigure', GlobalData.DataSet.Figure.hFigure);
-        set(hFig, 'Visible', 'off');
+%         [hFig, iFig, iDS] = bst_figures('GetFigure', GlobalData.DataSet(iFile).Figure.hFigure);
+%         bst_figures('SetBackgroundColor', hFig, [1 1 1]);
+%         set(hFig, 'Visible', 'off');
+%         set(hFig, 'Position', [left bottom width height]);
+        set(hFig, 'Position', [0 0 710 556]);  % Default values of single 2dlayout figure
         
-%         CONSIDER INHERITING THE hFig for all parallel processes - while
-%         plotting all processors on the same opened figure
+        % Find index that just opened figure corresponds to (this is done for enabling parallelization)
+        all_datafiles = {GlobalData.DataSet.DataFile};
+        [temp, index] = ismember(sInput.FileName, all_datafiles)
+
+        
+        figures_struct(iFile).FigureObject   = GlobalData.DataSet(index).Figure;
+        figures_struct(iFile).Status = 'Open';
         
 %              [hFigs,iFigs,iDSs,iSurfs] = bst_figures('DeleteFigure', hFig, 'NoUnload')
 
@@ -515,15 +513,17 @@ function open_close_topography_window(sInput, action)
         % Only one window can be open at a time.
         % This affects parallel processing of this function.
         % TODO - Consider a workaround
-        close(GlobalData.DataSet.Figure.hFigure)
+%         close(GlobalData.DataSet(iFile).Figure.hFigure)
+        close(figures_struct(iFile).FigureObject.hFigure)
+        figures_struct(iFile).Status = 'Closed';
     end
 end
 
 
-function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels)
+function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, figures_struct)
     global GlobalData
 
-%      %  %  %  MAKE SURE TO MAKE ALL THE VALUES POSITIVE AND CHANGE THE
+%      %  %  %  CONSIDER MAKING ALL VALUES POSITIVE AND CHANGE THE
 %         %  MIN MAX TO [0, MIN+MAX]
 % THIS IS STILL NOT WORKING
 %     F = abs(min(min(F(selectedChannels,:)))) + F;
@@ -535,11 +535,13 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels)
     
     % This is altering the EEG 2D display - NOT THE COLORBAR ON THE BOTTOM
     % RIGHT - THE COLORBAR NEEDS TO BE ADDRESSED
-    GlobalData.Dataset.Figure.Handles.DataMinMax = [the_min, the_max];
+%     GlobalData.DataSet(iFile).Figure.Handles.DataMinMax = [the_min, the_max];
+    figures_struct(iFile).FigureObject.Handles.DataMinMax = [the_min, the_max];
     
     
     % Get size of exported files
-    [height,width,~] = size(print(GlobalData.DataSet.Figure.hFigure, '-noui', '-r50', '-RGBImage'));
+%     [height,width,~] = size(print(GlobalData.DataSet(iFile).Figure.hFigure, '-noui', '-r50', '-RGBImage'));
+    [height,width,~] = size(print(figures_struct(iFile).FigureObject.hFigure, '-noui', '-r50', '-RGBImage'));
 
     
     NIFTI = zeros(height, width, length(Time), 'uint8');
@@ -548,23 +550,30 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels)
 
         % ===== APPLY TRANSFORMATION =====
         % Mapping on a different surface (magnetic source reconstruction of just smooth display)
-        if ~isempty(GlobalData.DataSet.Figure.Handles.Wmat)
+%         if ~isempty(GlobalData.DataSet(iFile).Figure.Handles.Wmat)
+        if ~isempty(figures_struct(iFile).FigureObject.Handles.Wmat)
             % Apply interpolation matrix sensors => display surface
-            if (size(GlobalData.DataSet.Figure.Handles.Wmat,1) == length(DataToPlot))
-                DataToPlot = full(GlobalData.DataSet.Figure.Handles.Wmat * DataToPlot);
+%             if (size(GlobalData.DataSet(iFile).Figure.Handles.Wmat,1) == length(DataToPlot))
+            if (size(figures_struct(iFile).FigureObject.Handles.Wmat,1) == length(DataToPlot))
+%                 DataToPlot = full(GlobalData.DataSet(iFile).Figure.Handles.Wmat * DataToPlot);
+                DataToPlot = full(figures_struct(iFile).FigureObject.Handles.Wmat * DataToPlot);
             % Find first corresponding indices
             else
 %                 [tmp,I,J] = intersect(selectedChannels, GlobalData.DataSet(iDS).Figure(iFig).SelectedChannels);
-                [tmp,I,J] = intersect(selectedChannels, GlobalData.DataSet.Figure.SelectedChannels);
-                DataToPlot = full(GlobalData.DataSet.Figure.Handles.Wmat(:,J) * DataToPlot(I));
+%                 [tmp,I,J] = intersect(selectedChannels, GlobalData.DataSet(iFile).Figure.SelectedChannels);
+                [tmp,I,J] = intersect(selectedChannels, figures_struct(iFile).FigureObject.SelectedChannels);
+%                 DataToPlot = full(GlobalData.DataSet(iFile).Figure.Handles.Wmat(:,J) * DataToPlot(I));
+                DataToPlot = full(figures_struct(iFile).FigureObject.Handles.Wmat(:,J) * DataToPlot(I));
             end
         end         
 
-        set(GlobalData.DataSet.Figure.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
+%         set(GlobalData.DataSet(iFile).Figure.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
+        set(figures_struct(iFile).FigureObject.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
 
         % Check exporting image
-        img = print(GlobalData.DataSet.Figure.hFigure, '-noui', '-r50', '-RGBImage');        
-        img_gray= 255-rgb2gray(img); % Inverse black/white to have the surrounding black
+%         img = print(GlobalData.DataSet(iFile).Figure.hFigure, '-noui', '-r50', '-RGBImage');        
+        img = print(figures_struct(iFile).FigureObject.hFigure, '-noui', '-r50', '-RGBImage');        
+        img_gray= 255 - rgb2gray(img);
         NIFTI(:,:,iTime) = img_gray;
     end
     
@@ -639,14 +648,11 @@ function export_participants_json()
                            'IvadomedNiftiFiles', ...
                            protocol.Comment);
 
-
     text = '{\n"participant_id": {\n\t"Description": "Unique ID",\n\t"LongName": "Participant ID"\n\t},\n"sex": {\n\t"Description": "M or F",\n\t"LongName": "Participant sex"\n\t},\n"age": {\n\t"Description": "yy",\n\t"LongName": "Participant age"\n\t}\n}';
 
     fileID = fopen(bst_fullfile(parentPath, 'participants.json'),'w');
     fprintf(fileID,text);
     fclose(fileID);
-
-
 end
 
 
