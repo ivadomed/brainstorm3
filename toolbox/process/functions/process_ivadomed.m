@@ -216,18 +216,6 @@ function OutputFiles = Run(sProcess, sInputs)
     sInputs(inputs_to_remove) = [];
     
     %% Get all subjects to create the participants.tsv file
-    subjects = {};
-    for i = 1:length(sInputs)
-        subjects{i} = str_remove_spec_chars(sInputs(i).SubjectName);
-    end
-    
-    
-    % === EXPORT BIDS FILES ===
-    export_participants_tsv(unique(subjects))
-    export_participants_json()
-    export_dataset_description()
-    export_readme()
-    
     
     % === OUTPUT STUDY ===
     
@@ -248,23 +236,30 @@ function OutputFiles = Run(sProcess, sInputs)
     
     %% Convert the input trials to NIFTI files
     filenames = cell(length(sInputs),1);
+    subjects = cell(length(sInputs),1);
     if isempty(poolobj)
         for iFile = 1:length(sInputs)
             sInput = sInputs(iFile);
-            filenames{iFile} = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
+            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
         end
     else
         parfor iFile = 1:length(sInputs)
             sInput = sInputs(iFile);
-            filenames{iFile} = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
+            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
         end
     end
         
     OutputFiles = {};
+    
+    % === EXPORT BIDS FILES ===
+    export_participants_tsv(unique(subjects))
+    export_participants_json()
+    export_dataset_description()
+    export_readme()
 end
 
 
-function OutputMriFile = convertTopography2matrix(sInput, sProcess, wanted_Fs, iEpoch)
+function [OutputMriFile, subject] = convertTopography2matrix(sInput, sProcess, wanted_Fs, iEpoch)
 %   % Ignoring the bad sensors in the interpolation, so some values will be interpolated from the good sensors
 %   WExtrap = GetInterpolation(iDS, iFig, TopoInfo, Vertices, Faces, bfs_center, bfs_radius, chan_loc(selChan,:));
 % 
@@ -353,7 +348,7 @@ function OutputMriFile = convertTopography2matrix(sInput, sProcess, wanted_Fs, i
     % No special characters to avoid messing up with the IVADOMED importer
     subject = str_remove_spec_chars(sInput.SubjectName);
     session = str_remove_spec_chars(sInput.Condition);
-%     trial   = str_remove_spec_chars(sInput.Comment);  % Use this on the filename
+    trial   = str_remove_spec_chars(sInput.Comment);  % Use this on the filename
                        
     % Hack to accommodate ivadomed derivative selection:
     % https://github.com/ivadomed/ivadomed/blob/master/ivadomed/loader/utils.py # L812
@@ -370,9 +365,10 @@ function OutputMriFile = convertTopography2matrix(sInput, sProcess, wanted_Fs, i
     
     % Get output filename
     if sProcess.options.bidsFolders.Value==1
-        OutputMriFile = bst_fullfile(parentPath, ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_epoch' iEpoch '.nii']);
+        OutputMriFile = bst_fullfile(parentPath, ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial '.nii']);
     elseif sProcess.options.bidsFolders.Value==2
-        OutputMriFile = bst_fullfile(parentPath, ['sub-' subject session], 'anat', ['sub-' subject session '_epoch' iEpoch '.nii']);
+        subject = [subject session];
+        OutputMriFile = bst_fullfile(parentPath, ['sub-' subject], 'anat', ['sub-' subject '_' trial '.nii']);
     end
     
     
@@ -473,16 +469,17 @@ function OutputMriFile = convertTopography2matrix(sInput, sProcess, wanted_Fs, i
     % TODO - IF MULTIPLE SUBJECTS OR MULTIPLE SESSIONS - ACCOMMODATE THE MAIN
     % FOLDER STRUCTURE
     if isempty(sProcess.options.eventname.Value)
-        annotation = 'event1';
+        annotation = 'centered';
     else
         annotation = sProcess.options.eventname.Value;
     end
     
     % Get output filename
     if sProcess.options.bidsFolders.Value==1
-        OutputDerivativeMriFile = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_epoch' iEpoch '_' annotation '.nii']);
+        OutputDerivativeMriFile = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial '_' annotation '.nii']);
     elseif sProcess.options.bidsFolders.Value==2
-        OutputDerivativeMriFile = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject session], 'anat', ['sub-' subject session '_epoch' iEpoch '_' annotation '.nii']);
+        % Subject already has the session integrated
+        OutputDerivativeMriFile = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], 'anat', ['sub-' subject '_' trial '_' annotation '.nii']);
     end
     
     %% Export the created cube to NIFTI
