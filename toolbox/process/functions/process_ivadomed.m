@@ -1,4 +1,30 @@
 function varargout = process_ivadomed( varargin )
+% PROCESS_IVADOMED: this function enables training of deep learning models 
+% with the Ivadomed toolbox:
+% https://ivadomed.org/en/latest/index.html
+
+% USAGE:    sProcess = process_ivadomed('GetDescription')
+%        OutputFiles = process_ivadomed('Run', sProcess, sInput)
+
+% @=============================================================================
+% This function is part of the Brainstorm software:
+% https://neuroimage.usc.edu/brainstorm
+% 
+% Copyright (c)2000-2020 University of Southern California & McGill University
+% This software is distributed under the terms of the GNU General Public License
+% as published by the Free Software Foundation. Further details on the GPLv3
+% license can be found at http://www.gnu.org/copyleft/gpl.html.
+% 
+% FOR RESEARCH PURPOSES ONLY. THE SOFTWARE IS PROVIDED "AS IS," AND THE
+% UNIVERSITY OF SOUTHERN CALIFORNIA AND ITS COLLABORATORS DO NOT MAKE ANY
+% WARRANTY, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+% MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE, NOR DO THEY ASSUME ANY
+% LIABILITY OR RESPONSIBILITY FOR THE USE OF THIS SOFTWARE.
+%
+% For more information type "brainstorm license" at command prompt.
+% =============================================================================@
+%
+% Author: Konstantinos Nasiotis, 2021
 
 eval(macro_method);
 end
@@ -18,13 +44,26 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.nInputs     = 1;
     sProcess.nMinFiles   = 1;
     
+    
+    sProcess.options.label1.Comment = '<B>BIDS conversion parameters:</B>';
+    sProcess.options.label1.Type    = 'label';
     % Event name
     sProcess.options.eventname.Comment = 'Event for ground truth';
     sProcess.options.eventname.Type    = 'text';
     sProcess.options.eventname.Value   = 'event1';
+    % Event help comment
+    sProcess.options.eventname_help.Comment = '<I><FONT color="#777777">If the eventname is left empty, the annotations is based on the following time-window within each trial</FONT></I>';
+    sProcess.options.eventname_help.Type    = 'label';
+    % Options: Segment around spike
+    sProcess.options.timewindow.Comment  = 'Annotations Time window: ';
+    sProcess.options.timewindow.Type     = 'range';
+    sProcess.options.timewindow.Value    = {[-0.150, 0.150],'ms',[]};
+    % Event help comment
+    sProcess.options.timewindow_help.Comment = '<I><FONT color="#777777">This time window is only used for annotating around single events or if event name is empty</FONT></I>';
+    sProcess.options.timewindow_help.Type    = 'label';
     
     % Needed Fs
-    sProcess.options.fs.Comment = 'Resampling rate (empty for no resampling)';
+    sProcess.options.fs.Comment = 'Resampling rate <I><FONT color="#777777">(empty for no resampling)</FONT></I>';
     sProcess.options.fs.Type    = 'value';
     sProcess.options.fs.Value   = {100, 'Hz', 0};
     
@@ -36,66 +75,44 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.jitter_help.Comment = '<I><FONT color="#777777">This is used to crop the edges of each trial so the trained model doesn"t learn the position of the event</FONT></I>';
     sProcess.options.jitter_help.Type    = 'label';
     
-    
-    % Method: Average or PCA
-    sProcess.options.label1.Comment = '<BR>Command to execute:';
-    sProcess.options.label1.Type    = 'label';
-    sProcess.options.command.Comment = {'Training', 'Testing', 'Segmentation'};
-    sProcess.options.command.Type    = 'radio';
-    sProcess.options.command.Value   = 1;
-    
-    % File selection options
-    SelectOptions = {...
-        '/tmp/spinegeneric', ...                            % Filename
-        '', ...                            % FileFormat
-        'open', ...                        % Dialog type: {open,save}
-        'Import anatomy folder...', ...    % Window title
-        'ImportAnat', ...                  % LastUsedDir: {ImportData,ImportChannel,ImportAnat,ExportChannel,ExportData,ExportAnat,ExportProtocol,ExportImage,ExportScript}
-        'single', ...                      % Selection mode: {single,multiple}
-        'dirs', ...                        % Selection mode: {files,dirs,files_and_dirs}
-        bst_get('FileFilters', 'AnatIn'), ... % Available file formats
-        'AnatIn'};                         % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,AnatIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn}
-    
-    % Use existing SSPs
-    sProcess.options.usessp.Comment = 'Debugging';
-    sProcess.options.usessp.Type    = 'checkbox';
-    sProcess.options.usessp.Value   = 1;
+    % Needed threshold for soft annotation
+    sProcess.options.annotthresh.Comment = 'Soft annotation threshold (0,1)';
+    sProcess.options.annotthresh.Type    = 'value';
+    sProcess.options.annotthresh.Value   = {[], [], 1};
+    % Annotation threshold comment
+    sProcess.options.annotthresh_help.Comment = '<I><FONT color="#777777">If selected, the annotation will have a soft threshold. Leave empty for hard annotation at 0.5</FONT></I>';
+    sProcess.options.annotthresh_help.Type    = 'label';
     % Parallel processing
     sProcess.options.paral.Comment = 'Parallel processing';
     sProcess.options.paral.Type    = 'checkbox';
     sProcess.options.paral.Value   = 0;
-    % Event name
-    sProcess.options.gpu.Comment = 'GPU IDs: ';
-    sProcess.options.gpu.Type    = 'text';
-    sProcess.options.gpu.Value   = '1, 2, 3';
-    % Option: Dataset Selection
-    sProcess.options.output.Comment = 'Output Folder:';
-    sProcess.options.output.Type    = 'filename';
-    sProcess.options.output.Value   = SelectOptions;
+    % Method: BIDS subject selection
+    sProcess.options.label2.Comment = '<B>BIDS folders creation </B>';
+    sProcess.options.label2.Type    = 'label';
+    sProcess.options.bidsFolders.Comment = {'Normal', 'Separate runs/sessions as different subjects'};
+    sProcess.options.bidsFolders.Type    = 'radio';
+    sProcess.options.bidsFolders.Value   = 1;
     
-    
+    % Method: Command to use
+    sProcess.options.label3.Comment = '<BR><B>Command to execute:</B>';
+    sProcess.options.label3.Type    = 'label';
+    sProcess.options.command.Comment = {'Training', 'Testing', 'Segmentation'};
+    sProcess.options.command.Type    = 'radio';
+    sProcess.options.command.Value   = 1;
+    % Use existing SSPs
+    sProcess.options.usessp.Comment = 'Debugging';
+    sProcess.options.usessp.Type    = 'checkbox';
+    sProcess.options.usessp.Value   = 1;
     % Default selection of components
     sProcess.options.gpu.Comment = 'GPU IDs: ';
     sProcess.options.gpu.Type    = 'value';
     sProcess.options.gpu.Value   = {[0,1,2,3], 'list', 0};
      % Method: Average or PCA
-    sProcess.options.label3.Comment = '<BR>Model selection:';
-    sProcess.options.label3.Type    = 'label';
+    sProcess.options.label4.Comment = '<B>Model selection:</B>';
+    sProcess.options.label4.Type    = 'label';
     sProcess.options.modelselection.Comment = {'default_model'; 'FiLMedUnet'; 'HeMISUnet'; 'Modified3DUNet'};
     sProcess.options.modelselection.Type    = 'radio';
     sProcess.options.modelselection.Value   = 1;
-    
-    % File selection options
-    SelectOptions = {...
-        '/data/large-dataset-testing', ...                            % Filename
-        '', ...                            % FileFormat
-        'open', ...                        % Dialog type: {open,save}
-        'Import anatomy folder...', ...    % Window title
-        'ImportAnat', ...                  % LastUsedDir: {ImportData,ImportChannel,ImportAnat,ExportChannel,ExportData,ExportAnat,ExportProtocol,ExportImage,ExportScript}
-        'single', ...                      % Selection mode: {single,multiple}
-        'dirs', ...                        % Selection mode: {files,dirs,files_and_dirs}
-        bst_get('FileFilters', 'AnatIn'), ... % Available file formats
-        'AnatIn'};                         % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,AnatIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn}
     % Multichannel
     sProcess.options.multichannel.Comment = 'Multichannel';
     sProcess.options.multichannel.Type    = 'checkbox';
@@ -105,20 +122,18 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.softgt.Type    = 'checkbox';
     sProcess.options.softgt.Value   = 0;
     % Method: Average or PCA
-    sProcess.options.label2.Comment = '<BR>Slice Axis:';
-    sProcess.options.label2.Type    = 'label';
+    sProcess.options.label5.Comment = '<B>Slice Axis:</B>';
+    sProcess.options.label5.Type    = 'label';
     sProcess.options.sliceaxis.Comment = {'Axial'; 'Sagittal'; 'Coronal'};
     sProcess.options.sliceaxis.Type    = 'radio';
     sProcess.options.sliceaxis.Value   = 1;
-    
-    % Event name
-    sProcess.options.loss.Comment = 'Loss function: ';
+    % Loss function name
+    sProcess.options.loss.Comment = '<B>Loss function:</B>';
     sProcess.options.loss.Type    = 'text';
     sProcess.options.loss.Value   = 'DiceLoss';
-    
-    % Multichannel
-    sProcess.options.label4.Comment = '<BR>Uncertainty';
-    sProcess.options.label4.Type    = 'label';
+    % Uncertainty
+    sProcess.options.label6.Comment = '<B>Uncertainty</B>';
+    sProcess.options.label6.Type    = 'label';
     sProcess.options.epistemic.Comment = 'Epistemic';
     sProcess.options.epistemic.Type    = 'checkbox';
     sProcess.options.epistemic.Value   = 1;
@@ -130,7 +145,6 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.spikesorter.Type   = 'text';
     sProcess.options.spikesorter.Value  = 'ivadomed';
     sProcess.options.spikesorter.Hidden = 1;
-    
     % Options: Options
     sProcess.options.edit.Comment = {'panel_spikesorting_options', '<U><B>Config file</B></U>: '};
     sProcess.options.edit.Type    = 'editpref';
@@ -163,14 +177,56 @@ function OutputFiles = Run(sProcess, sInputs)
     
     wanted_Fs = sProcess.options.fs.Value{1};
     
+    
+    %% Do some checks on the parameters
+    
+    % In case the selected event is single event, or the eventname isempty,
+    % make sure the time-window has values
+    inputs_to_remove = false(length(sInputs),1);
+    
+    for iInput = 1:length(sInputs)
+        dataMat = in_bst(sInputs(iInput).FileName, 'Events');
+        events = dataMat.Events;
+        Time = in_bst(sInputs(iInput).FileName, 'Time');
+        
+        if isempty(sProcess.options.eventname.Value)
+            if length(sProcess.options.timewindow.Value{1})<2 || isempty(sProcess.options.timewindow.Value{1}) || ...
+                    sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
+                inputs_to_remove(iInput) = true;
+            	bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
+            end
+        else
+            [isSelectedEventPresent, index] = ismember(sProcess.options.eventname.Value, {events.label});
+            
+            if ~isSelectedEventPresent
+                inputs_to_remove(iInput) = true;
+            	bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
+            else
+                if sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
+                    inputs_to_remove(iInput) = true;
+                    bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
+                end
+                
+            end
+        end
+    end
+    
+    % The following works on Matlab R2021a - I think older versions
+    % need another command to squeeze the empty structure entries - TODO
+    sInputs(inputs_to_remove) = [];
+    
     %% Get all subjects to create the participants.tsv file
     subjects = {};
     for i = 1:length(sInputs)
         subjects{i} = str_remove_spec_chars(sInputs(i).SubjectName);
     end
     
-    export_participants_tsv(unique(subjects))
     
+    % === EXPORT BIDS FILES ===
+    export_participants_tsv(unique(subjects))
+    export_participants_json()
+    export_dataset_description()
+    export_readme()
     
     
     % === OUTPUT STUDY ===
@@ -192,13 +248,18 @@ function OutputFiles = Run(sProcess, sInputs)
     
     %% Convert the input trials to NIFTI files
     filenames = cell(length(sInputs),1);
-    for iFile = 1:length(sInputs)
-        sInput = sInputs(iFile);
-        
-        filenames{iFile} = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
-        
-        
+    if isempty(poolobj)
+        for iFile = 1:length(sInputs)
+            sInput = sInputs(iFile);
+            filenames{iFile} = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
+        end
+    else
+        parfor iFile = 1:length(sInputs)
+            sInput = sInputs(iFile);
+            filenames{iFile} = convertTopography2matrix(sInput, sProcess, wanted_Fs, iFile);
+        end
     end
+        
     OutputFiles = {};
 end
 
@@ -292,6 +353,7 @@ function OutputMriFile = convertTopography2matrix(sInput, sProcess, wanted_Fs, i
     % No special characters to avoid messing up with the IVADOMED importer
     subject = str_remove_spec_chars(sInput.SubjectName);
     session = str_remove_spec_chars(sInput.Condition);
+%     trial   = str_remove_spec_chars(sInput.Comment);  % Use this on the filename
                        
     % Hack to accommodate ivadomed derivative selection:
     % https://github.com/ivadomed/ivadomed/blob/master/ivadomed/loader/utils.py # L812
@@ -305,38 +367,83 @@ function OutputMriFile = convertTopography2matrix(sInput, sProcess, wanted_Fs, i
         iEpoch = [letters(iLetter) num2str(iEpoch)];
     end
     
-    % TODO - IF MULTIPLE SUBJECTS OR MULTIPLE SESSIONS - ACCOMMODATE THE MAIN
-    % FOLDER STRUCTURE
-    OutputMriFile = bst_fullfile(parentPath, ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_epoch' iEpoch '.nii']);
-
+    
+    % Get output filename
+    if sProcess.options.bidsFolders.Value==1
+        OutputMriFile = bst_fullfile(parentPath, ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_epoch' iEpoch '.nii']);
+    elseif sProcess.options.bidsFolders.Value==2
+        OutputMriFile = bst_fullfile(parentPath, ['sub-' subject session], 'anat', ['sub-' subject session '_epoch' iEpoch '.nii']);
+    end
+    
+    
     %% Export the created cube to NIFTI
     OutputMriFile = export2NIFTI(sMri, OutputMriFile);
     
     %% Create derivative
-    F_derivative = ones(size(dataMat.F));  % I start with ones instead of zeros. The annotations will be marked as 0.
-                                           % The reason for this is that
-                                           % the saved images are inverted
 
     % The derivative will be based on a period of time that is annotated to
     % be the Ground truth.
     % In the case of extended event, only that period of time will annotated
-    % In the case of simpple event, the selection 
+    % In the case of simple event, the selection 
+    
+    % First check that an event label was selected by the user for
+    % annotation
+    % In the case of a simple event, the annotation will be converted to
+    % extended based on the time-window values selected by the user,
+    % RELATIVE TO THE SIMPLE EVENT OCCURENCE e.g. [-50,50] ms around the
+    % event.
+    % In no eventlabel is selected, the annotation will be based on the time-window
+    % selected, with the TIMING MATCHING THE TRIAL-TIME VALUES
+    
+    F_derivative = ones(size(dataMat.F));  % I start with ones instead of zeros. The annotations will be marked as 0.
+                                           % The reason for this is that
+                                           % the saved images are inverted
+    
+                                           
     iAllSelectedEvents = find(ismember({dataMat.Events.label}, strsplit(sProcess.options.eventname.Value,{',',' '})));
-    annotationValue = 0;
-    for iSelectedEvent = iAllSelectedEvents
-        annotationValue = annotationValue-1;
-        % EXTENDED EVENTS
-        for iEvent = 1:size(dataMat.Events(iSelectedEvent).times,2)
-            iAnnotation_time_edges  = bst_closest(dataMat.Events(iSelectedEvent).times(:,iEvent)', dataMat.Time);
+    annotationValue = 1;
+        
+    if ~isempty(iAllSelectedEvents)  % Selected event
+        for iSelectedEvent = iAllSelectedEvents
+            annotationValue = annotationValue-1;
+            isExtended = size(dataMat.Events(iSelectedEvent).times,1)>1;                                       
 
-            % If no specific channels are annotated, annotate the entire slice
-            if isempty(dataMat.Events(iSelectedEvent).channels{1,iEvent})
-                F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+            if isExtended
+                % EXTENDED EVENTS - ANNOTATE BASED ON THEM ONLY
+                for iEvent = 1:size(dataMat.Events(iSelectedEvent).times,2)
+                    iAnnotation_time_edges  = bst_closest(dataMat.Events(iSelectedEvent).times(:,iEvent)', dataMat.Time);
+
+                    % If no specific channels are annotated, annotate the entire slice
+                    if isempty(dataMat.Events(iSelectedEvent).channels{1,iEvent})
+                        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                    else
+                        iAnnotation_channels  = find(ismember({ChannelMat.Channel.Name}, dataMat.Events(iSelectedEvent).channels{1,iEvent}));
+                        F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                    end
+                end
             else
-                iAnnotation_channels  = find(ismember({ChannelMat.Channel.Name}, dataMat.Events(iSelectedEvent).channels{1,iEvent}));
-                F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                % SIMPLE EVENTS - ANNOTATE BASED ON THE TIME WINDOW
+                % SELECTED AROUND THEM
+                for iEvent = 1:size(dataMat.Events(iSelectedEvent).times,2)
+                    % Here the annotation is defined by the selected event
+                    % and the time-window selected around it
+                    iAnnotation_time_edges  = bst_closest(dataMat.Events(iSelectedEvent).times(iEvent)+sProcess.options.timewindow.Value{1}, dataMat.Time);
+
+                    % If no specific channels are annotated, annotate the entire slice
+                    if isempty(dataMat.Events(iSelectedEvent).channels{1,iEvent})
+                        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                    else
+                        iAnnotation_channels  = find(ismember({ChannelMat.Channel.Name}, dataMat.Events(iSelectedEvent).channels{1,iEvent}));
+                        F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                    end
+                end
             end
         end
+    else  % No event selected - ANNOTATE BASED ON THE SELECTED TIME WINDOW WITHIN THE TIME IN TRIAL
+    	annotationValue = annotationValue-1;
+        iAnnotation_time_edges  = bst_closest(sProcess.options.timewindow.Value{1}, dataMat.Time);
+        % Annotate the entire slice
+        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
     end
         
     open_close_topography_window(sInput, 'open')
@@ -347,15 +454,36 @@ function OutputMriFile = convertTopography2matrix(sInput, sProcess, wanted_Fs, i
     % Set the values to 0 and 1 for the annotations
     % Hard threshold
     NIFTI_derivative = NIFTI_derivative/max(max(max(NIFTI_derivative)));
-    NIFTI_derivative(NIFTI_derivative<0.5) = 0;
-    NIFTI_derivative(NIFTI_derivative>=0.5) = 1;
+    
+    % If no value is selected for soft thesholding the annotation, apply a
+    % hard annotation at 0.5
+    if isempty(sProcess.options.annotthresh.Value{1})
+        NIFTI_derivative(NIFTI_derivative<0.5) = 0;
+        NIFTI_derivative(NIFTI_derivative>=0.5) = 1;
+    else
+        % In case of soft-annotation thresholding, assign everything below
+        % the threshold to 0 - BUT KEEP THE VALUES AS THEY ARE ABOVE THE
+        % THRESHOLD
+        NIFTI_derivative(NIFTI_derivative<sProcess.options.annotthresh.Value{1}) = 0;
+    end
     
     % Annotate derivative
     sMri.Cube = NIFTI_derivative;
     
     % TODO - IF MULTIPLE SUBJECTS OR MULTIPLE SESSIONS - ACCOMMODATE THE MAIN
     % FOLDER STRUCTURE
-    OutputDerivativeMriFile = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_epoch' iEpoch '_' sProcess.options.eventname.Value '.nii']);
+    if isempty(sProcess.options.eventname.Value)
+        annotation = 'event1';
+    else
+        annotation = sProcess.options.eventname.Value;
+    end
+    
+    % Get output filename
+    if sProcess.options.bidsFolders.Value==1
+        OutputDerivativeMriFile = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_epoch' iEpoch '_' annotation '.nii']);
+    elseif sProcess.options.bidsFolders.Value==2
+        OutputDerivativeMriFile = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject session], 'anat', ['sub-' subject session '_epoch' iEpoch '_' annotation '.nii']);
+    end
     
     %% Export the created cube to NIFTI
     OutputMriFile = export2NIFTI(sMri, OutputDerivativeMriFile);
@@ -371,11 +499,18 @@ function open_close_topography_window(sInput, action)
         % figure when it is for Ivadomed
         % Modality       : {'MEG', 'MEG GRAD', 'MEG MAG', 'EEG', 'ECOG', 'SEEG', 'NIRS'}
         % TopoType       : {'3DSensorCap', '2DDisc', '2DSensorCap', 2DLayout', '3DElectrodes', '3DElectrodes-Cortex', '3DElectrodes-Head', '3DElectrodes-MRI', '3DOptodes', '2DElectrodes'}
-
+        
+        
             % TODO - GET MODALITY AUTOMATICALLY
         [hFig, iDS, iFig] = view_topography(sInput.FileName, 'MEG', '2DSensorCap');        
         [hFig, iFig, iDS] = bst_figures('GetFigure', GlobalData.DataSet.Figure.hFigure);
         set(hFig, 'Visible', 'off');
+        
+%         CONSIDER INHERITING THE hFig for all parallel processes - while
+%         plotting all processors on the same opened figure
+        
+%              [hFigs,iFigs,iDSs,iSurfs] = bst_figures('DeleteFigure', hFig, 'NoUnload')
+
     elseif strcmp(action, 'close')
         % Close window
         % This needs to be done since the resizing of multiple windows that 
@@ -438,6 +573,7 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels)
     
     
     %% CROP IMAGE (AVOID COLORBAR AND WASTED SPACE AROUND TOPOGRAPHY)
+    % TODO - THIS IS AFFECTED BY THE SCREEN RESOLUTION
     % ALSO FLIP TO CREATE CORRECT ORIENTATION WITH
     % LEFT-RIGHT-ANTERIOR-POSTERIOR
     crop_from_top = 30;
