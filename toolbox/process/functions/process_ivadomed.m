@@ -229,11 +229,21 @@ function OutputFiles = Run(sProcess, sInputs)
     
     for iInput = 1:length(sInputs)
         info_trials(iInput).FileName = sInputs(iInput).FileName;
-        info_trials(iInput).dataMat = in_bst(sInputs(iInput).FileName);
         info_trials(iInput).subject = str_remove_spec_chars(sInputs(iInput).SubjectName);
         info_trials(iInput).session = str_remove_spec_chars(sInputs(iInput).Condition);
         info_trials(iInput).trial = str_remove_spec_chars(sInputs(iInput).Comment);  % TODO - THE UNIQUE LIST OF TRIAL LABELS NEEDS TO BE ADDED ON THE IVADOMED CONFIG.JSON FILE TO BE INCLUDED IN TRAINING/VALIDATION
-        % Get output study
+      
+        % Load data structure
+        info_trials(iInput).dataMat = in_bst(sInputs(iInput).FileName);
+        
+        % And resample if needed
+        current_Fs = round(1/diff(info_trials(iInput).dataMat.Time(1:2)));
+        if ~isnan(wanted_Fs) && current_Fs~=wanted_Fs
+            %[x, time_out] = process_resample('Compute', x, time_in, NewRate)
+            [info_trials(iInput).dataMat.F, info_trials(iInput).dataMat.Time] = process_resample('Compute', info_trials(iInput).dataMat.F, info_trials(iInput).dataMat.Time, wanted_Fs);
+        end
+
+          % Get output study
         [tmp, iStudy] = bst_process('GetOutputStudy', sProcess, sInputs(iInput));
         % Get channel file
         sChannel = bst_get('ChannelForStudy', iStudy);
@@ -281,12 +291,12 @@ function OutputFiles = Run(sProcess, sInputs)
     if isempty(poolobj)
         for iFile = 1:length(info_trials)
             sInput = sInputs(iFile);
-            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(info_trials(iFile), sProcess, wanted_Fs, iFile, figures_struct);
+            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
         end
     else
         parfor iFile = 1:length(info_trials)
             sInput = sInputs(iFile);
-            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(info_trials(iFile), sProcess, wanted_Fs, iFile, figures_struct);
+            [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
         end
     end
         
@@ -301,7 +311,7 @@ function OutputFiles = Run(sProcess, sInputs)
 end
 
 
-function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, sProcess, wanted_Fs, iFile, figures_struct)
+function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, sProcess, iFile, figures_struct)
 %   % Ignoring the bad sensors in the interpolation, so some values will be interpolated from the good sensors
 %   WExtrap = GetInterpolation(iDS, iFig, TopoInfo, Vertices, Faces, bfs_center, bfs_radius, chan_loc(selChan,:));
 % 
@@ -310,9 +320,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 
     % TODO
     disp('DOES The colormap need to be GRAY???')
-    
-    current_Fs = round(1/diff(single_info_trial.dataMat.Time(1:2)));
-    
+        
     subject = single_info_trial.subject;
     session = single_info_trial.session;
     trial   = single_info_trial.trial;
@@ -321,17 +329,14 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     % We want to avoid the model learning the positioning of the event so
     % we crop the time dimension on both sides with a jitter
     
+    current_Fs = round(1/diff(single_info_trial.dataMat.Time(1:2)));
+    
     discardElementsBeginning = round(randi(sProcess.options.jitter.Value{1}*1000)/1000 * current_Fs);
     discardElementsEnd = round(randi(sProcess.options.jitter.Value{1}*1000)/1000 * current_Fs);
     
     single_info_trial.dataMat.Time = single_info_trial.dataMat.Time(1+discardElementsBeginning:end-discardElementsEnd);
     single_info_trial.dataMat.F = single_info_trial.dataMat.F(:,1+discardElementsBeginning:end-discardElementsEnd);
     
-    %% Resample if needed
-    if ~isnan(wanted_Fs) && current_Fs~=wanted_Fs
-        %[x, time_out] = process_resample('Compute', x, time_in, NewRate)
-        [single_info_trial.dataMat.F, single_info_trial.dataMat.Time] = process_resample('Compute', single_info_trial.dataMat.F, single_info_trial.dataMat.Time, wanted_Fs);
-    end
     
 %     %% CHANGE THE COLORMAP DISPLAYED ON THE BOTTOM LEFT
 %     % Get colormap type
@@ -361,8 +366,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     NIFTI = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, selectedChannels, iFile, figures_struct);
 %     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
 
-    %% Get the output filename and     
-    
+    %% Get the output filename
     
     % Substitute the voxels with the 2D slices created from the 2dlayout
     % topography
