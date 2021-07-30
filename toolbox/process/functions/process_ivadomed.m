@@ -229,9 +229,9 @@ function OutputFiles = Run(sProcess, sInputs)
     
     for iInput = 1:length(sInputs)
         info_trials(iInput).FileName = sInputs(iInput).FileName;
-        info_trials(iInput).subject = str_remove_spec_chars(sInputs(iInput).SubjectName);
-        info_trials(iInput).session = str_remove_spec_chars(sInputs(iInput).Condition);
-        info_trials(iInput).trial = str_remove_spec_chars(sInputs(iInput).Comment);  % TODO - THE UNIQUE LIST OF TRIAL LABELS NEEDS TO BE ADDED ON THE IVADOMED CONFIG.JSON FILE TO BE INCLUDED IN TRAINING/VALIDATION
+        info_trials(iInput).subject = lower(str_remove_spec_chars(sInputs(iInput).SubjectName));
+        info_trials(iInput).session = lower(str_remove_spec_chars(sInputs(iInput).Condition));
+        info_trials(iInput).trial = lower(str_remove_spec_chars(sInputs(iInput).Comment));  % TODO - THE UNIQUE LIST OF TRIAL LABELS NEEDS TO BE ADDED ON THE IVADOMED CONFIG.JSON FILE TO BE INCLUDED IN TRAINING/VALIDATION
       
         % Load data structure
         info_trials(iInput).dataMat = in_bst(sInputs(iInput).FileName);
@@ -288,12 +288,16 @@ function OutputFiles = Run(sProcess, sInputs)
     %% Convert the input trials to NIFTI files
     filenames = cell(length(info_trials),1);
     subjects = cell(length(info_trials),1);
+    
     if isempty(poolobj)
+        bst_progress('start', 'Ivadomed', 'Converting trials to NIFTI files...', 0, length(sInputs));
         for iFile = 1:length(info_trials)
             sInput = sInputs(iFile);
             [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
+            bst_progress('inc', 1);
         end
     else
+        bst_progress('start', 'Raster Plot per Neuron', 'Binning Spikes...', 0, 0);
         parfor iFile = 1:length(info_trials)
             sInput = sInputs(iFile);
             [filenames{iFile}, subjects{iFile}] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
@@ -307,7 +311,6 @@ function OutputFiles = Run(sProcess, sInputs)
     export_participants_json(parentPath)
     export_dataset_description(parentPath)
     export_readme(parentPath)
-    
 end
 
 
@@ -319,7 +322,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 %   [DataToPlot, Time, selChan, overlayLabels, dispNames, StatThreshUnder, StatThreshOver] = GetFigureData(iDS, iFig, 0);
 
     % TODO
-    disp('DOES The colormap need to be GRAY???')
+    disp('DOES The colormap need to be GRAY???') % ANSWER: YES
         
     subject = single_info_trial.subject;
     session = single_info_trial.session;
@@ -512,19 +515,39 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         [hFig, iDS, iFig] = view_topography(FileName, 'MEG', '2DSensorCap');        
 %         [hFig, iFig, iDS] = bst_figures('GetFigure', GlobalData.DataSet(iFile).Figure.hFigure);
 %         bst_figures('SetBackgroundColor', hFig, [1 1 1]);
+
+
+
+
         set(hFig, 'Visible', 'off');
+
+
+
+
+
 %         set(hFig, 'Position', [left bottom width height]);
         set(hFig, 'Position', [0 0 710 556]);  % Default values of single 2dlayout figure
         
         % Find index that just opened figure corresponds to (this is done for enabling parallelization)
         all_datafiles = {GlobalData.DataSet.DataFile};
         [temp, index] = ismember(FileName, all_datafiles);
-
         
         figures_struct(iFile).FigureObject = GlobalData.DataSet(index).Figure;
         figures_struct(iFile).Status = 'Open';
         
+%         % If the colorbar object is present delete it
+%         if length(figures_struct(iFile).FigureObject.hFigure.Children) > 1
+%            delete(figures_struct(iFile).FigureObject.hFigure.Children(1))
+%         end
+        
 %              [hFigs,iFigs,iDSs,iSurfs] = bst_figures('DeleteFigure', hFig, 'NoUnload')
+
+
+
+        %TODO - MAKE SURE YOU SET THE COLORMAP TO BE GRAY BEFORE SAVING THE
+        %SLICES
+
+
 
     elseif strcmp(action, 'close')
         % Close window
@@ -538,10 +561,22 @@ end
 function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, figures_struct)
     % global GlobalData
 
-%      %  %  %  CONSIDER MAKING ALL VALUES POSITIVE AND CHANGE THE
+%      %  %  %  TODO - CONSIDER MAKING ALL VALUES POSITIVE AND CHANGE THE
 %         %  MIN MAX TO [0, MIN+MAX]
-% THIS IS STILL NOT WORKING
+% THIS IS STILL NOT WORKING - check for usage with int8 or uint8
 %     F = abs(min(min(F(selectedChannels,:)))) + F;
+    
+
+    % ATTEMPT TO PARALLELIZE FIGURES
+% % %     % Create a new figure that will have a copy of the objects from the
+% % %     % original
+% % %     hFig2 = figure('visible','off');
+% % %     set(hFig2, 'units', 'pixels');
+% % %     set(hFig2, 'Position', [0 0 710 556]);  % Default values of single 2dlayout figure
+% % %     ax2 = copyobj(figures_struct(1).FigureObject.hFigure.CurrentAxes,hFig2);
+% % % %     ax1Chil = figures_struct(1).FigureObject.hFigure.CurrentAxes.Children; 
+% % % %     copyobj(ax1Chil, ax2)
+% % % %     set(ax2.Children(1), 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
     
     
     % GLOBAL MIN_MAX FOR EACH TRIAL
@@ -553,12 +588,30 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, fig
 %     GlobalData.DataSet(iFile).Figure.Handles.DataMinMax = [the_min, the_max];
     figures_struct(iFile).FigureObject.Handles.DataMinMax = [the_min, the_max];
     
+%             plot(figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2),'bo')
+%             delete(figures_struct(iFile).FigureObject.hFigure.Children(1)) % Gets rid of the colorbar object
+%     
     
     % Get size of exported files
 %     [height,width,~] = size(print(GlobalData.DataSet(iFile).Figure.hFigure, '-noui', '-r50', '-RGBImage'));
     [height,width,~] = size(print(figures_struct(iFile).FigureObject.hFigure, '-noui', '-r50', '-RGBImage'));
 
     
+   
+    
+%         axes_handle = figures_struct(iFile).FigureObject.hFigure.CurrentAxes;
+%         set(axes_handle,'units','pixels');
+%         pos = get(axes_handle,'position');
+%         xlim = get(axes_handle,'xlim');
+%         ylim = get(axes_handle,'ylim');
+% %         x_in_pixels = pos(1) + pos(3) * (x_in_axes-xlim(1))/(xlim(2)-xlim(1));
+% 
+%             hardcoded_offset = 80
+% 
+%         x_in_pixels = pos(1) + pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%         y_in_pixels = hardcoded_offset + pos(2) + pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));
+    
+              
     NIFTI = zeros(height, width, length(Time), 'uint8');
     for iTime = 1:length(Time)
         DataToPlot = F(selectedChannels,iTime);
@@ -590,6 +643,8 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, fig
         img = print(figures_struct(iFile).FigureObject.hFigure, '-noui', '-r50', '-RGBImage');        
         img_gray= 255 - rgb2gray(img);
         NIFTI(:,:,iTime) = img_gray;
+        
+        
     end
     
     
@@ -597,16 +652,30 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, fig
     % TODO - THIS IS AFFECTED BY THE SCREEN RESOLUTION
     % ALSO FLIP TO CREATE CORRECT ORIENTATION WITH
     % LEFT-RIGHT-ANTERIOR-POSTERIOR
-    crop_from_top = 30;
-    crop_from_bottom = -30;
-    crop_from_left = 30;
-    crop_from_right = -60;
+       % USE THIS FOR -r0
+%     crop_from_top = 60;
+%     crop_from_bottom = -70;
+%     crop_from_left = 70;
+%     crop_from_right = -140;
     
-    NIFTI = NIFTI(crop_from_top:end+crop_from_bottom, crop_from_left:end+crop_from_right,:);
+    % USE THIS FOR -r50
+    crop_from_top = 35;
+    crop_from_bottom = -35;
+    crop_from_left = 40;
+    crop_from_right = -75;
     
+    NIFTI = NIFTI(crop_from_top:end+crop_from_bottom, crop_from_left:end+crop_from_right,:);    
     NIFTI = flip(permute(NIFTI,[2,1,3]),2);
+    
+    
+    
+    %% CONSIDER DOWNSAMPLING - THIS WILL AFFECT THE COORDINATES OF THE ELECTRODES - TODO
+    
+% %     NIFTI = imresize(NIFTI, [200, 150], 'nearest');
+%     
 %     figure(1);
-%     imagesc(squeeze(NIFTI2(:,:,1)));
+%     imagesc(squeeze(NIFTI2(:,:,50)));
+
     
 end
 
@@ -647,7 +716,7 @@ function export_participants_tsv(parentPath, subjects)
     end
         
     % Writetable didn't allow export in .tsv - I rename it after
-    writetable(struct2table(participants_data), bst_fullfile(parentPath, 'participants.txt'), 'Delimiter', ',')
+    writetable(struct2table(participants_data), bst_fullfile(parentPath, 'participants.txt'), 'Delimiter', '\t')
     movefile(bst_fullfile(parentPath, 'participants.txt'), bst_fullfile(parentPath, 'participants.tsv'))
 end
 
