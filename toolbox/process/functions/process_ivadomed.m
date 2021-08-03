@@ -169,11 +169,11 @@ function OutputFiles = Run(sProcess, sInputs)
     % TODO - Confirm this is the best approach to check if IVADOMED is
     % installed
     % Check if ivadomed is installed on the Conda environment
-    output = system('ivadomed -h');
-    if output~=0
-        bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
-        return
-    end
+%     output = system('ivadomed -h');
+%     if output~=0
+%         bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+%         return
+%     end
     
     wanted_Fs = sProcess.options.fs.Value{1};
     
@@ -366,7 +366,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     %% Gather the topography slices to a single 3d matrix
     % Here the time dimension is the 3rd dimension
     figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct);
-    NIFTI = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, selectedChannels, iFile, figures_struct);
+    NIFTI = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct);
 %     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
 
     %% Get the output filename
@@ -456,7 +456,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     end
         
     figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct);
-    NIFTI_derivative = channelMatrix2pixelMatrix(F_derivative, single_info_trial.dataMat.Time, selectedChannels, iFile, figures_struct);
+    NIFTI_derivative = channelMatrix2pixelMatrix(F_derivative, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct);
     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
 
     
@@ -518,15 +518,17 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
 
 
 
+            hFig.CurrentAxes.PlotBoxAspectRatio = [1,1,1]
 
-        set(hFig, 'Visible', 'off');
+%         set(hFig, 'Visible', 'off');
 
 
 
 
 
 %         set(hFig, 'Position', [left bottom width height]);
-        set(hFig, 'Position', [0 0 710 556]);  % Default values of single 2dlayout figure
+%         set(hFig, 'Position', [0 0 710 556]);  % Default values of single 2dlayout figure
+        set(hFig, 'Position', [0 0 355 258]);  % Default values of single 2dlayout figure
         
         % Find index that just opened figure corresponds to (this is done for enabling parallelization)
         all_datafiles = {GlobalData.DataSet.DataFile};
@@ -558,7 +560,7 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
 end
 
 
-function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, figures_struct)
+function NIFTI = channelMatrix2pixelMatrix(F, Time, ChannelMat, selectedChannels, iFile, figures_struct)
     % global GlobalData
 
 %      %  %  %  TODO - CONSIDER MAKING ALL VALUES POSITIVE AND CHANGE THE
@@ -588,30 +590,19 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, fig
 %     GlobalData.DataSet(iFile).Figure.Handles.DataMinMax = [the_min, the_max];
     figures_struct(iFile).FigureObject.Handles.DataMinMax = [the_min, the_max];
     
-%             plot(figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2),'bo')
-%             delete(figures_struct(iFile).FigureObject.hFigure.Children(1)) % Gets rid of the colorbar object
-%     
     
-    % Get size of exported files
-%     [height,width,~] = size(print(GlobalData.DataSet(iFile).Figure.hFigure, '-noui', '-r50', '-RGBImage'));
-    [height,width,~] = size(print(figures_struct(iFile).FigureObject.hFigure, '-noui', '-r50', '-RGBImage'));
+            iChannel = 59;
+            plot(figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,2),'k.')
+            for i = iChannel
+                text(figures_struct(iFile).FigureObject.Handles.MarkersLocs(i,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(i,2),ChannelMat.Channel(i).Name)
+            end
+            
+    delete(figures_struct(iFile).FigureObject.hFigure.Children(1)) % Gets rid of the colorbar object
+     
+    img = getframe(figures_struct(iFile).FigureObject.hFigure.Children);
+    [height,width,~] = size(img.cdata);
 
-    
-   
-    
-%         axes_handle = figures_struct(iFile).FigureObject.hFigure.CurrentAxes;
-%         set(axes_handle,'units','pixels');
-%         pos = get(axes_handle,'position');
-%         xlim = get(axes_handle,'xlim');
-%         ylim = get(axes_handle,'ylim');
-% %         x_in_pixels = pos(1) + pos(3) * (x_in_axes-xlim(1))/(xlim(2)-xlim(1));
-% 
-%             hardcoded_offset = 80
-% 
-%         x_in_pixels = pos(1) + pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-%         y_in_pixels = hardcoded_offset + pos(2) + pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));
-    
-              
+        
     NIFTI = zeros(height, width, length(Time), 'uint8');
     for iTime = 1:length(Time)
         DataToPlot = F(selectedChannels,iTime);
@@ -639,42 +630,55 @@ function NIFTI = channelMatrix2pixelMatrix(F, Time, selectedChannels, iFile, fig
         set(figures_struct(iFile).FigureObject.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
 
         % Check exporting image
-%         img = print(GlobalData.DataSet(iFile).Figure.hFigure, '-noui', '-r50', '-RGBImage');        
-        img = print(figures_struct(iFile).FigureObject.hFigure, '-noui', '-r50', '-RGBImage');        
-        img_gray= 255 - rgb2gray(img);
+        img = getframe(figures_struct(iFile).FigureObject.hFigure.Children);
+        img_gray= 255 - rgb2gray(img.cdata);
         NIFTI(:,:,iTime) = img_gray;
-        
         
     end
     
     
-    %% CROP IMAGE (AVOID COLORBAR AND WASTED SPACE AROUND TOPOGRAPHY)
-    % TODO - THIS IS AFFECTED BY THE SCREEN RESOLUTION
-    % ALSO FLIP TO CREATE CORRECT ORIENTATION WITH
-    % LEFT-RIGHT-ANTERIOR-POSTERIOR
-       % USE THIS FOR -r0
-%     crop_from_top = 60;
-%     crop_from_bottom = -70;
-%     crop_from_left = 70;
-%     crop_from_right = -140;
-    
-    % USE THIS FOR -r50
-    crop_from_top = 35;
-    crop_from_bottom = -35;
-    crop_from_left = 40;
-    crop_from_right = -75;
-    
-    NIFTI = NIFTI(crop_from_top:end+crop_from_bottom, crop_from_left:end+crop_from_right,:);    
+    %% Change dimensions to fit the NIFTI requirements - FSLeyes displays the slices with the correct orientation after the flip
     NIFTI = flip(permute(NIFTI,[2,1,3]),2);
     
     
     
-    %% CONSIDER DOWNSAMPLING - THIS WILL AFFECT THE COORDINATES OF THE ELECTRODES - TODO
+    %% Get electrode position in pixel coordinates
+    axes_handle = figures_struct(iFile).FigureObject.hFigure.Children;
+    set(axes_handle,'units','pixels');
+    pos = get(axes_handle,'position');
+    xlim = get(axes_handle,'xlim');
+    ylim = get(axes_handle,'ylim');
+
+    x_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+    x_in_pixels = x_in_pixels/1.16 + 1;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+    y_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1)) + 1;  % Y axis is reversed, so I subtract from pos(4)
     
-% %     NIFTI = imresize(NIFTI, [200, 150], 'nearest');
-%     
+    
+    %% Export to csv
+    
+    
+    
+    
+    %%
+%     h = figure(10);
+%     imagesc(squeeze(NIFTI(:,:,1)))
+%     colormap('gray')
+% 
+%     hold on
+% 
+%     plot(x_in_pixels(iChannel), y_in_pixels(iChannel),'*g')
+%     hold off
+    
+    %%
+    
+%     %% CONSIDER DOWNSAMPLING - THIS WILL AFFECT THE COORDINATES OF THE ELECTRODES - TODO
+%     scale = 0.25;
+%     NIFTI2 = imresize(NIFTI, scale);
+% %     
 %     figure(1);
 %     imagesc(squeeze(NIFTI2(:,:,50)));
+%     hold on
+%     plot(ceil(scale*x_in_pixels(iChannel)), ceil(scale*y_in_pixels(iChannel)),'g*')
 
     
 end
