@@ -129,27 +129,29 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
 
     %% Check if IVADOMED is installed/accessible
     
-%     output = system('ivadomed -h');
-%     if output~=0
-%         bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
-%         return
-%     end
+    output = system('ivadomed -h');
+    if output~=0
+        bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+        return
+    end
     
-    %% Create a BIDS dataset with the trials to be segmented
-    get_filenames = 1;
-    OutputFiles = process_ivadomed('Run', sProcess, sInputs, get_filenames);
     
     
     %% Important files/folders
     ivadomedOutputFolder = bst_fileparts(bst_fileparts(modelFile));  % Output of the trained model
     configFile = bst_fullfile(ivadomedOutputFolder, 'config_file.json');
     
-    
     protocol = bst_get('ProtocolInfo');
     parentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
                        'IvadomedNiftiFiles', ...
-                       [protocol.Comment '-segmentation']);                   
-    
+                       [protocol.Comment '-segmentation']);
+    channelsparentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
+                       'IvadomedNiftiFiles', ...
+                       [protocol.Comment '-meta-segmentation']);
+                   
+    %% Create a BIDS dataset with the trials to be segmented
+    get_filenames = 1;
+    OutputFiles = process_ivadomed('Run', sProcess, sInputs, get_filenames);    
     
     
     %% Instead of changing the config.json file, call ivadomed with FLAG usage
@@ -161,165 +163,111 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         return
     end
     
-    
     %% Get ivadomed output segmentation files
-    
     segmentationMasks = cell(length(sInputs),1);
     for iInput = 1:length(sInputs)
         [a,b,c] = bst_fileparts(OutputFiles{iInput});
         [a,file_basename,c] = bst_fileparts(b);
 
-        % TODO - GRAB centered from json file
+        % TODO - GRAB event annotation suffix (e.g. "centered") from json file
         segmentationMasks{iInput} = bst_fullfile(ivadomedOutputFolder, 'pred_masks', [file_basename, '_', 'centered', '_pred.nii.gz']);
     end
     
-    
-    
-    
     %% Converter from masks to Brainstorm events
-    MriFile = segmentationMasks{1};
-    unzippedMask = gunzip(MriFile);
-    
-    [MRI, vox2ras] = in_mri_nii(unzippedMask{1}, 1, 1, 0);
-    
-    
-    
-    [labeledImage, numberOfBlobs] = bwlabel(squeeze(MRI.Cube(45,:,:)));
-    blobMeasurements = regionprops(labeledImage, 'area', 'Centroid');
-    
-    disp(1)
-    
-    
-    Regions=regionprops(squeeze(MRI.Cube(45,:,:)), 'Image','Area','Centroid'); % all white islands
-
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    %%
-    % Prepare options structure for the detection function
-    OPTIONS = Compute();
-    % Time window to process
-    if isfield(sProcess.options, 'timewindow') && isfield(sProcess.options.timewindow, 'Value') && iscell(sProcess.options.timewindow.Value) && ~isempty(sProcess.options.timewindow.Value)
-        TimeWindow = sProcess.options.timewindow.Value{1};
-    else
-        TimeWindow = [];
-    end
-    
-    % Get current progressbar position
-    progressPos = bst_progress('get');
     nEvents = 0;
     nTotalOcc = 0;
     
-    % For each file
-    iOk = false(1,length(sInputs));
-    for iFile = 1:length(sInputs)
-        % ===== GET DATA =====
-        % Progress bar
-        bst_progress('text', 'Reading channel to process...');
-        bst_progress('set', progressPos + round(iFile / length(sInputs) / 3 * 100));
-        % Load the raw file descriptor
-        isRaw = strcmpi(sInputs(iFile).FileType, 'raw');
-        if isRaw
-            DataMat = in_bst_data(sInputs(iFile).FileName, 'F', 'Time');
-            sFile = DataMat.F;
-        else
-            DataMat = in_bst_data(sInputs(iFile).FileName, 'Time');
-            sFile = in_fopen(sInputs(iFile).FileName, 'BST-DATA');
-        end
+    results = struct;
+    
+    for iInput = 1:length(sInputs)
+        MriFile = segmentationMasks{iInput};
+        unzippedMask = gunzip(MriFile);
+
+        [MRI, vox2ras] = in_mri_nii(unzippedMask{1}, 1, 1, 0);
+
+        % Delete nifti (.nii) - keep the unzipped for debugging - TODO -
+        % consider removing the .nii.gz as well once we know the models
+        % work
+        delete(unzippedMask{1})
+        
+        % Read trial info
+        dataMat = in_bst(sInputs(iInput).FileName);
+        F = false(size(dataMat.F));
+        Time = dataMat.Time;
+        
+        % Get output study
+        [tmp, iStudy] = bst_process('GetOutputStudy', sProcess, sInputs(iInput));
+        % Get channel file
+        sChannel = bst_get('ChannelForStudy', iStudy);
         % Load channel file
-        ChannelMat = in_bst_channel(sInputs(iFile).ChannelFile);
-        % Process only continuous files
-        if ~isempty(sFile.epochs)
-            bst_report('Error', sProcess, sInputs(iFile), 'This function can only process continuous recordings (no epochs).');
-            continue;
-        end
-        % Get channel to process: multiple channels
-        if any(chanName == ',')
-            [iChannels, iChanWeights] = ParseChannelMontage(chanName, {ChannelMat.Channel.Name});
-            if isempty(iChannels)
-                bst_report('Error', sProcess, sInputs(iFile), ['Montage "' chanName '" could not be interpreted. Please check channel names.']);
-                continue;
-            end
-        % One channel
-        else
-            iChannels = find(strcmpi({ChannelMat.Channel.Name}, chanName));
-            if isempty(iChannels)
-                bst_report('Error', sProcess, sInputs(iFile), ['Channel "' chanName '" not found in the channel file.']);
-                continue;
-            elseif (length(iChannels) > 1)
-                bst_report('Error', sProcess, sInputs(iFile), ['Found more than one channel with name "' chanName '" in the channel file.']);
-                continue;
-            end
-            iChanWeights = 1;
-        end
-        % Read channel to process
-        if ~isempty(TimeWindow)
-            SamplesBounds = round(sFile.prop.times(1) .* sFile.prop.sfreq) + bst_closest(TimeWindow, DataMat.Time) - 1;
-        else
-            SamplesBounds = [];
-        end
-        [F, TimeVector] = in_fread(sFile, ChannelMat, 1, SamplesBounds, iChannels);
-        % Apply weights if reading multiple channels
-        if (length(iChannels) > 1)
-            F = iChanWeights * F;
-        end
-        % If nothing was read
-        if isempty(F) || (length(TimeVector) < 2)
-            bst_report('Error', sProcess, sInputs(iFile), 'Time window is not valid.');
-            continue;
+        info_channels(iInput).ChannelMat = in_bst_channel(sChannel.FileName);
+        
+        % Read the channel pixel coordinates file
+        channelCoordinatesFile = bst_fullfile(bst_fileparts(strrep(OutputFiles{iInput}, 'brainstorm-segmentation', 'brainstorm-meta-segmentation')), 'channels.csv');
+        T = readtable(channelCoordinatesFile);
+        
+        for iChannel = 1:length(T.ChannelNames)
+            
+            [tmp ,indexCh] = ismember(T.ChannelNames{iChannel}, {info_channels(iInput).ChannelMat.Channel.Name});
+            
+            indicesTime = find(MRI.Cube(T.x_coordinates(iChannel), T.y_coordinates(iChannel), :)==255);
+            F(indexCh,indicesTime) = true;
         end
         
-        % ===== BAD SEGMENTS =====
-        % If ignore bad segments
-        Fmask = [];
-        if isIgnoreBad
-            % Get list of bad segments in file
-            badSeg = panel_record('GetBadSegments', sFile);
-            % Adjust with beginning of file
-            badSeg = badSeg - round(sFile.prop.times(1) .* sFile.prop.sfreq) + 1;
-            if ~isempty(badSeg)
-                % Create file mask
-                Fmask = true(size(F));
-                % Loop on each segment: mark as bad
-                for iSeg = 1:size(badSeg, 2)
-                    Fmask(badSeg(1,iSeg):badSeg(2,iSeg)) = false;
-                end
-            end
+        
+        %% Now assign the event if the majority of channels indicate annotation
+        % TODO - DETECTION/ANNOTATION ALGORITHM - IMPROVE
+        % FOR NOW WORKS ONLY WHEN ALL CHANNELS ARE ANNOTATED - NOT JUST A FEW
+        mask = false(1, size(F,2));
+        event_timevector = [];
+        
+        
+        majority_vote = 0.8;  % this allows to allocate the percentage of channels that need to have the annotation in order to keep it
+                              % This is useful only in the case where all
+                              % of annotations on all channels - not
+                              % partial annotations - TODO - generalize to
+                              % partial annotations
+        
+        for iSample = 1:size(F,2)
+            % If majority - annotate
+            if sum(F(:, iSample))>= length(T.ChannelNames) * majority_vote
+                mask(iSample) = true;
+                event_timevector = [event_timevector Time(iSample)];
+            end            
         end
         
-        % ===== DETECT PEAKS =====
-        % Progress bar
-        bst_progress('text', 'Detecting peaks...');
-        bst_progress('set', progressPos + round(2 * iFile / length(sInputs) / 3 * 100));
-        % Perform detection
-        detectedEvt = Compute(F, TimeVector, OPTIONS, Fmask);
+        
+        % Find discontinuities to assign multiple extended events
+        a = diff(mask);
+        start = find(a>0);
+        stop = find(a<0);
+        
+        if length(start)~=length(stop)
+            stop % deal with this
+        end
+        
+%         % Make a summary plot
+%         figure(1); 
+%         
+%         ax = subplot(5,1,[1:4]); imagesc(Time, 1:size(F,1), F); ylabel 'Channel ID'; title 'Ivadomed single Trial Segmentation'; set(ax,'Ydir', 'normal')
+%         ax2 = subplot(5,1,5); plot(Time, mask); hold on; plot(Time(start+1), mask(start+1), '*g', 'linewidth', 8); plot(Time(stop), mask(stop), '*r', 'linewidth', 8); hold off; 
+%         title 'Annotation Mask (majority vote)'; xlabel 'Time (sec)'; axis ([min(Time), max(Time), -0.5, 1.5]); yticks([0,1])
+%         set(ax,'FontSize',20)
+%         ax.XAxis.Visible = 'off'; % remove y-axis
+%         set(ax2,'FontSize',20)
+        
+        %
+        detectedEvt = [Time(start);Time(stop)]; % Create extended events
+        
 
         % ===== CREATE EVENTS =====
         sEvent = [];
         % Basic events structure
-        if ~isfield(sFile, 'events') || isempty(sFile.events)
-            sFile.events = repmat(db_template('event'), 0);
+        if isempty(dataMat.Events)
+            dataMat.Events = repmat(db_template('event'), 0);
         end
         % Process each event type separately
-        for i = 1:length(detectedEvt)
+        for i = 1:size(detectedEvt,2)
             % Event name
             if (i > 1)
                 newName = sprintf('%s%d', evtName, i);
@@ -327,286 +275,51 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                 newName = evtName;
             end
             % Get the event to create
-            iEvt = find(strcmpi({sFile.events.label}, newName));
+            iEvt = find(strcmpi({dataMat.Events.label}, newName));
             % Existing event: reset it
             if ~isempty(iEvt)
-                sEvent = sFile.events(iEvt);
+                sEvent = dataMat.Events(iEvt);
                 sEvent.epochs     = [];
                 sEvent.times      = [];
                 sEvent.reactTimes = [];
             % Else: create new event
             else
                 % Initialize new event
-                iEvt = length(sFile.events) + 1;
+                iEvt = length(dataMat.Events) + 1;
                 sEvent = db_template('event');
                 sEvent.label = newName;
                 % Get the default color for this new event
-                sEvent.color = panel_record('GetNewEventColor', iEvt, sFile.events);
+                sEvent.color = panel_record('GetNewEventColor', iEvt, dataMat.Events);
             end
             % Times, samples, epochs
-            sEvent.times    = detectedEvt{i};
+            sEvent.times    = detectedEvt;
             sEvent.epochs   = ones(1, size(sEvent.times,2));
             sEvent.channels = cell(1, size(sEvent.times, 2));
             sEvent.notes    = cell(1, size(sEvent.times, 2));
             % Add to events structure
-            sFile.events(iEvt) = sEvent;
+            dataMat.Events(iEvt) = sEvent;
             nEvents = nEvents + 1;
             nTotalOcc = nTotalOcc + size(sEvent.times, 2);
         end
-        
+
         % ===== SAVE RESULT =====
         % Progress bar
         bst_progress('text', 'Saving results...');
-        bst_progress('set', progressPos + round(3 * iFile / length(sInputs) / 3 * 100));
+%         bst_progress('set', progressPos + round(3 * iFile / length(sInputs) / 3 * 100));
         % Only save changes if something was detected
         if ~isempty(sEvent)
-            % Report changes in .mat structure
-            if isRaw
-                DataMat.F = sFile;
-            else
-                DataMat.Events = sFile.events;
-            end
-            DataMat = rmfield(DataMat, 'Time');
+            %dataMat = rmfield(dataMat, 'Time');
             % Save file definition
-            bst_save(file_fullpath(sInputs(iFile).FileName), DataMat, 'v6', 1);
+            bst_save(file_fullpath(sInputs(iInput).FileName), dataMat, 'v6', 1);
             % Report number of detected events
-            bst_report('Info', sProcess, sInputs(iFile), sprintf('%s: %d events detected in %d categories', chanName, nTotalOcc, nEvents));
+%             bst_report('Info', sProcess, sInputs(iInput), sprintf('%s: %d events detected in %d categories', chanName, nTotalOcc, nEvents));
         else
-            bst_report('Warning', sProcess, sInputs(iFile), ['No event detected on channel "' chanName '". Please check the signal quality.']);
+            bst_report('Warning', sProcess, sInputs(iInput), ['No event detected. Please check the annotations quality.']);
         end
-        iOk(iFile) = true;
     end
     % Return all the input files
-    OutputFiles = {sInputs(iOk).FileName};
+    OutputFiles = {sInputs.FileName};
+        
+        
 end
-
-
-%% ===== PERFORM DETECTION =====
-% USAGE:      evt = Compute(F, TimeVector, OPTIONS, Fmask)
-%             evt = Compute(F, TimeVector, OPTIONS)
-%         OPTIONS = Compute()                              : Get the default options structure
-function evt = Compute(F, TimeVector, OPTIONS, Fmask)
-    % Options structure
-    defOptions = struct('bandpass',     [10, 40], ...   % Filter the signal before performing the detection, [highpass, lowpass]
-                        'threshold',    2, ...          % Create an event if the value goes > threshold * standard deviation
-                        'blanking',     .5, ...         % No events can be detected during the blanking period
-                        'maxcross',     10, ...         % Max number of bounces accepted in one blanking period (to ignore high-frequency oscillations)
-                        'ampmin',       0, ...          % Minimum absolute value accepted for a detected peak
-                        'isnoisecheck', 1, ...          % If 1, perform a noise quality check on the detected events
-                        'noisethresh',  2.5, ...        %    => Noise threshold (x standard deviation or the rms)
-                        'isclassify',   1, ...          % If 1, classify the events in different morphological categories
-                        'corrval',      .8, ...         %    => Correlation threshold
-                        'ismaxpeak',    1);             % If 1, the max point defines the event, else, first thresh crossing defines the event 
-    % Parse inputs
-    if (nargin == 0)
-        evt = defOptions;
-        return;
-    end
-    if (nargin < 4)
-        Fmask = [];
-    end
-    % Copy the missing parameters
-    OPTIONS = struct_copy_fields(OPTIONS, defOptions, 0);
-    % Sampling frequency
-    sFreq = 1 ./ (TimeVector(2) - TimeVector(1));
-    % Convert blanking period to number of samples
-    blankSmp = round(OPTIONS.blanking * sFreq);
-    % Initialize output
-    evt = {};
-    % If blanking period longer than the signal to process: exit
-    if (blankSmp >= length(F))
-        bst_report('Warning', 'process_evt_detect', [], 'The blanking period between two events is longer than the signal. Cannot perform detection.');
-        return;
-    end
-    
-    % ===== FILTER RECORDINGS =====
-    % Filter recordings
-    if ~isempty(OPTIONS.bandpass)
-        [F, FiltSpec] = process_bandpass('Compute', F, sFreq, OPTIONS.bandpass(1), OPTIONS.bandpass(2), 'bst-hfilter-2019', 0);
-        smpTransient = round(FiltSpec.transient * sFreq);
-    else
-        FiltSpec = [];
-        smpTransient = 0;
-    end
-    % Absolute value
-    Fabs = abs(F);
-    % Remove the bad bad segments from the signal (if any)
-    if ~isempty(Fmask)
-        Fsig = F(Fmask);
-    else
-        Fsig = F;
-    end
-    % Ignore the first and last 2% of the signal (in case of artifacts): Max of 2s
-    nIgnore = size(Fsig,2) * 0.02 + smpTransient;
-    nIgnore = round(min(2*sFreq, nIgnore));
-    Fsig = Fsig(nIgnore:end-nIgnore+1);
-    % Compute standard deviation
-    stdF = std(Fsig);
-    
-    % ===== DETERMINE THRESHOLD =====
-    % Theshold, in number of times the std
-    threshVal = OPTIONS.threshold * stdF;
-    % Find all the indices that are above the threshold
-    iThresh = find(Fabs(1:end-blankSmp) > threshVal);
-    % Nothing detected: exit
-    if isempty(iThresh)
-        return;
-    end
-
-    % ===== FIND EVENTS =====
-    events = repmat(struct('index',[], 'rms',0), 0);
-    i = 1;
-    while ~isempty(i)
-        % Get window
-        iWindow = iThresh(i) + (0:blankSmp-1);
-        % Find number of peaks
-        iTh = find(Fabs(iWindow) > threshVal);
-        diTh = diff(iTh);
-        iPeak = find(diTh > 1);
-        nPeaks = max(length(iPeak),1);
-        if OPTIONS.ismaxpeak
-            [FmaxWin, iMaxWin] = max(Fabs(iWindow));
-        else %is first maximum after threshold crossing
-            [FmaxWin, iMaxWin] = max(Fabs(iWindow(1:iPeak(1))));
-        end
-        % Event sample
-        iMax = iThresh(i) + iMaxWin - 1;
-        % If the peaks meet the criteria, this is an event
-        if (nPeaks < OPTIONS.maxcross) && (Fabs(iMax) > OPTIONS.ampmin) && (isempty(Fmask) || (Fmask(iMax) == 1))
-            iEvt = length(events) + 1;
-            events(iEvt).rms   = sqrt(mean(Fabs(iWindow).^2));
-            events(iEvt).index = iMax;
-        end
-        % Skip ahead past blank period
-        i = find(iThresh > iMax + blankSmp, 1);
-    end
-    % Nothing detected: exit
-    if isempty(events)
-        return;
-    end
-    
-    % ===== NOISE CHECKING =====
-    if OPTIONS.isnoisecheck
-        % Exclude events that do not meet noise criteria
-        rms_mean = mean([events.rms]); % mean rms of all events
-        rms_std = std([events.rms]); % std of rms for all events
-        rms_thresh = rms_mean + (rms_std * OPTIONS.noisethresh); % rms threshold
-        b = [events.rms] < rms_thresh; % find events less than rms threshold
-        events = [events(b).index];
-    else
-        events = [events.index];
-    end
-    % Nothing detected: exit
-    if isempty(events)
-        return;
-    end
-
-    % ===== SORT BY MORPHOLOGY =====
-    if OPTIONS.isclassify
-        % Time window: [-200,200]ms
-        iWindow = [round(-.2 .* sFreq), round(.2 .* sFreq)];
-        % We need to remove all the events that are before or after this time window
-        iRmEvt = find((events <= -iWindow(1)) | (events >= length(F) - iWindow(2)));
-        if ~isempty(iRmEvt)
-            events(iRmEvt) = [];
-        end
-        % No events left: exit
-        if isempty(events)
-            bst_report('Warning', 'process_evt_detect', [], 'The classification removed all the possible events.');
-            return;
-        end
-        % Create first ref event type
-        refEvt = F(events(1) + (iWindow(1):iWindow(2)));
-        evtType = -1 * ones(size(events));
-        evtCount = 1;
-        % Loop through all events
-        for i = 2:length(events)
-            newEvt = F(events(i) + (iWindow(1):iWindow(2)));
-            % Loop through all types
-            for j = 1:size(refEvt,1)
-                c = corrcoef(newEvt, refEvt(j,:));
-                if (c(1,2) > OPTIONS.corrval)
-                    evtType(i)  = j;
-                    evtCount(j) = evtCount(j) + 1;
-                    break;
-                end
-            end
-            % If no match create a new type
-            if (evtType(i) == -1)
-                j = size(refEvt,1) + 1;
-                refEvt(j,:) = newEvt;
-                evtType(i)  = j;
-                evtCount(j) = 1;
-            end
-        end
-        % Keep only the bigger clusters
-        if any(evtCount > 5)
-            iOkType = find(evtCount > 5);
-        else
-            iOkType = 1:length(evtCount);
-        end
-        % Order by cluster size
-        [tmp__, iSort] = sort(evtCount(iOkType), 'descend');
-        iOkType = iOkType(iSort);
-
-        % Create output cell array
-        for i = 1:length(iOkType)
-            evt{i} = TimeVector(events(evtType == iOkType(i)));
-        end
-    else
-        evt = {TimeVector(events)};
-    end
-end
-
-
-%% ===== PARSE CHANNEL MONTAGE =====
-function [iChannels, iChanWeights] = ParseChannelMontage(strMontage, ChannelNames)
-    % Split with ','
-    sline = str_split(strMontage, ',');
-    % Inialize list of channels
-    iChannels = zeros(1, length(sline));
-    iChanWeights = zeros(1, length(sline));
-    % Loop on all the entries
-    for i = 1:length(sline)
-        % Split with '*'
-        schan = str_split(strtrim(sline{i}), '*');
-        % No multiplication: "Cz" or "-Cz" or "+Cz"
-        if (length(schan) == 1)
-            schan = strtrim(schan{1});
-            if (schan(1) == '+')
-                chfactor = 1;
-                chname = schan(2:end);
-            elseif (schan(1) == '-')
-                chfactor = -1;
-                chname = schan(2:end);
-            else
-                chfactor = 1;
-                chname = schan;
-            end
-        % One multiplication: "<factor>*<chname>"
-        elseif (length(schan) == 2)
-            chfactor = str2num(strtrim(schan{1}));
-            chname = strtrim(schan{2});
-        else
-            iChannels = [];
-            iChanWeights = [];
-            return;
-        end
-        % Look for existing channel name
-        iChan = find(strcmpi(ChannelNames, chname));
-        if isempty(iChan)
-            iChannels = [];
-            iChanWeights = [];
-            return;
-        end
-        % If not referenced yet: add new channel entry
-        iChannels(i) = iChan;
-        iChanWeights(i) = chfactor;
-    end
-    % Sort channels
-    [iChannels,I] = sort(iChannels);
-    iChanWeights = iChanWeights(I);
-end
-            
-
-
+     

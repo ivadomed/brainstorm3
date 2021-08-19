@@ -233,13 +233,20 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     parentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
                        'IvadomedNiftiFiles', ...
                        protocol.Comment);
+    channels_times_path = [parentPath '-meta'];
                    
     % Differentiate simple conversion and segementation paths
     if strcmp(sProcess.options.convert.Value, 'segmentation')
+        channels_times_path = [channels_times_path '-segmentation'];
         parentPath = [parentPath '-segmentation'];
     end
-                   
-                   
+    
+    % Remove previous entries
+    if exist(parentPath, 'dir') 
+        rmdir(parentPath, 's')
+    end
+    
+        
     if isempty(sProcess.options.eventname.Value)
         annotation = 'centered';
     else
@@ -301,24 +308,24 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         if sProcess.options.bidsFolders.Value==1
             % Images
             info_trials(iInput).OutputMriFile      = bst_fullfile(parentPath, ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial '.nii']);
-            info_trials(iInput).OutputChannelsFile = bst_fullfile(parentPath, ['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
-            info_trials(iInput).OutputTimesFile    = bst_fullfile(parentPath, ['sub-' subject], ['ses-' session], 'anat', ['times_' trial '.csv']);
+            info_trials(iInput).OutputChannelsFile = bst_fullfile(channels_times_path, ['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
+            info_trials(iInput).OutputTimesFile    = bst_fullfile(channels_times_path, ['sub-' subject], ['ses-' session], 'anat', ['times_' trial '.csv']);
             
             % Derivatives
             info_trials(iInput).OutputMriFileDerivative      = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial '_' annotation '.nii']);
-            info_trials(iInput).OutputChannelsFileDerivative = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
-            info_trials(iInput).OutputTimesFileDerivative    = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['times_' trial '.csv']);
+            info_trials(iInput).OutputChannelsFileDerivative = bst_fullfile(channels_times_path, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
+            info_trials(iInput).OutputTimesFileDerivative    = bst_fullfile(channels_times_path, 'derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['times_' trial '.csv']);
             
         elseif sProcess.options.bidsFolders.Value==2
             subject = [subject session];
             info_trials(iInput).OutputMriFile      = bst_fullfile(parentPath, ['sub-' subject], 'anat', ['sub-' subject '_' trial '.nii']);
-            info_trials(iInput).OutputChannelsFile = bst_fullfile(parentPath, ['sub-' subject], 'anat', 'channels.csv');
-            info_trials(iInput).OutputTimesFile    = bst_fullfile(parentPath, ['sub-' subject], 'anat', ['times_' trial '.csv']);
+            info_trials(iInput).OutputChannelsFile = bst_fullfile(channels_times_path, ['sub-' subject], 'anat', 'channels.csv');
+            info_trials(iInput).OutputTimesFile    = bst_fullfile(channels_times_path, ['sub-' subject], 'anat', ['times_' trial '.csv']);
             
             % Derivatives
             info_trials(iInput).OutputMriFileDerivative      = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], 'anat', ['sub-' subject '_' trial '_' annotation '.nii']);
-            info_trials(iInput).OutputChannelsFileDerivative = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], 'anat', 'channels.csv');
-            info_trials(iInput).OutputTimesFileDerivative    = bst_fullfile(parentPath, 'derivatives', 'labels', ['sub-' subject], 'anat', ['times_' trial '.csv']);
+            info_trials(iInput).OutputChannelsFileDerivative = bst_fullfile(channels_times_path, 'derivatives', 'labels', ['sub-' subject], 'anat', 'channels.csv');
+            info_trials(iInput).OutputTimesFileDerivative    = bst_fullfile(channels_times_path, 'derivatives', 'labels', ['sub-' subject], 'anat', ['times_' trial '.csv']);
         end
     end
     
@@ -457,11 +464,12 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     OutputMriFile = export2NIFTI(single_info_trial.sMri, single_info_trial.OutputMriFile);
     
     %% Export additional files that will be used during segmentation
-    if ~strcmp(sProcess.options.convert.Value, 'segmentation')
-        % Export the channel coordinates to a .csv file
-        writetable(struct2table(channels_pixel_coordinates), single_info_trial.OutputChannelsFile, 'Delimiter', '\t')
-        % Export times to a .csv (This is needed since the trials have been truncated from the JITTER parameter)
-        writematrix(single_info_trial.dataMat.Time', single_info_trial.OutputTimesFile)
+    if strcmp(sProcess.options.convert.Value, 'segmentation')
+        
+        export_Channels_Times(single_info_trial, channels_pixel_coordinates, single_info_trial.dataMat.Time');
+        
+        
+        
     end
     %% Create derivative
 
@@ -773,6 +781,25 @@ function OutputMriFile = export2NIFTI(sMri, OutputMriFile)
     delete(OutputMriFile)
     
     OutputMriFile = [OutputMriFile '.gz'];
+    
+end
+
+
+function export_Channels_Times(single_info_trial, channels_pixel_coordinates, Time)
+    % Create the output folder first
+    [filepath,name,ext] = fileparts(single_info_trial.OutputChannelsFile);
+    if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
+        mkdir(bst_fileparts(single_info_trial.OutputChannelsFile))
+    end    
+
+    % Export the channel coordinates to a .csv file
+    writetable(struct2table(channels_pixel_coordinates), single_info_trial.OutputChannelsFile, 'Delimiter', '\t')
+    
+    % For segmentation we dont really need this - we have the info from the
+    % trials themselved - they are not truncated as is the case with the
+    % training part
+%     % Export times to a .csv (This is needed since the trials have been truncated from the JITTER parameter)
+%     writematrix(Time, single_info_trial.OutputTimesFile)
     
 end
 
