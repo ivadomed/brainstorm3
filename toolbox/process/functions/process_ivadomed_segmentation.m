@@ -62,6 +62,10 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.fs.Comment = 'Sampling rate that was used  while training the model <I><FONT color="#FF0000">(AUTOMATE THIS)</FONT></I>';
     sProcess.options.fs.Type    = 'value';
     sProcess.options.fs.Value   = {100, 'Hz', 0};
+    % GPU ID to run inference on
+    sProcess.options.gpu.Comment = 'GPU ID to run inference on <I><FONT color="#FF0000">(AUTOMATE THIS)</FONT></I>';
+    sProcess.options.gpu.Type    = 'value';
+    sProcess.options.gpu.Value   = {0, [], 0};
     % Conversion of both trials and their derivatives
     sProcess.options.convert.Type   = 'text';
     sProcess.options.convert.Value  = 'segmentation';  % Other option: 'conversion'
@@ -106,16 +110,17 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     % Grab the config.json file that was used and assign the method to
     % perform segmentation
     
-%     ivadomedOutputFolder = bst_fileparts(bst_fileparts(modelFile));
-%     configFile = bst_fullfile(ivadomedOutputFolder, 'config_file.json');
-%     
-%     fid = fopen(configFile);
-%     raw = fread(fid,inf);
-%     str = char(raw');
-%     fclose(fid);
-%     config_struct = jsondecode(str);
-%     
+    ivadomedOutputFolder = bst_fileparts(bst_fileparts(modelFile));
+    configFile = bst_fullfile(ivadomedOutputFolder, 'config_file.json');
+    
+    fid = fopen(configFile);
+    raw = fread(fid,inf);
+    str = char(raw');
+    fclose(fid);
+    config_struct = jsondecode(str);
+    
 %     config_struct.command = 'segment';
+%     config_struct.gpu_ids = 0  THIS SHOULD BE A LIST IN THE CONFIG FILE
 %     
 %     % Save back to json (Make it a bit more readable - still not great)
 %     txt = jsonencode(config_struct);
@@ -123,7 +128,8 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
 %     txt = strrep(txt, '[{', sprintf('[\r{\r'));
 %     txt = strrep(txt, '}]', sprintf('\r}\r]'));
 %     
-%     fid = fopen(configFile, 'w');
+% %     fid = fopen(configFile, 'w');
+%     fid = fopen('/home/nas/Desktop/a.txt', 'w');
 %     fwrite(fid, txt);
 %     fclose(fid);
 
@@ -170,7 +176,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         [a,file_basename,c] = bst_fileparts(b);
 
         % TODO - GRAB event annotation suffix (e.g. "centered") from json file
-        segmentationMasks{iInput} = bst_fullfile(ivadomedOutputFolder, 'pred_masks', [file_basename, '_', 'centered', '_pred.nii.gz']);
+        segmentationMasks{iInput} = bst_fullfile(ivadomedOutputFolder, 'pred_masks', [file_basename, config_struct.loader_parameters.target_suffix{1}, '_pred.nii.gz']);
     end
     
     %% Converter from masks to Brainstorm events
@@ -192,15 +198,29 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         
         % Read trial info
         dataMat = in_bst(sInputs(iInput).FileName);
-        F = false(size(dataMat.F));
+        
+        F = dataMat.F;
         Time = dataMat.Time;
+        % The conversion to NIFTI has been done with the sampling rate
+        % requested, but downsampling is needed here again for the events
+        % creation since I just reloaded the file
+        wanted_Fs = sProcess.options.fs.Value{1};
+        % And resample if needed
+        current_Fs = round(1/diff(Time(1:2)));
+        if ~isnan(wanted_Fs) && current_Fs~=wanted_Fs
+            %[x, time_out] = process_resample('Compute', x, time_in, NewRate)
+            [F, Time] = process_resample('Compute', dataMat.F, dataMat.Time, wanted_Fs);
+        end
+        
+        
+        F_segmented = false(size(F));
         
         % Get output study
         [tmp, iStudy] = bst_process('GetOutputStudy', sProcess, sInputs(iInput));
         % Get channel file
         sChannel = bst_get('ChannelForStudy', iStudy);
         % Load channel file
-        info_channels(iInput).ChannelMat = in_bst_channel(sChannel.FileName);
+        ChannelMat = in_bst_channel(sChannel.FileName);
         
         % Read the channel pixel coordinates file
         channelCoordinatesFile = bst_fullfile(bst_fileparts(strrep(OutputFiles{iInput}, 'brainstorm-segmentation', 'brainstorm-meta-segmentation')), 'channels.csv');
@@ -208,38 +228,52 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         
         for iChannel = 1:length(T.ChannelNames)
             
-            [tmp ,indexCh] = ismember(T.ChannelNames{iChannel}, {info_channels(iInput).ChannelMat.Channel.Name});
+            [tmp ,indexCh] = ismember(T.ChannelNames{iChannel}, {ChannelMat.Channel.Name});
             
             indicesTime = find(MRI.Cube(T.x_coordinates(iChannel), T.y_coordinates(iChannel), :)==255);
-            F(indexCh,indicesTime) = true;
+            F_segmented(indexCh,indicesTime) = true;
         end
         
         
         %% Now assign the event if the majority of channels indicate annotation
         % TODO - DETECTION/ANNOTATION ALGORITHM - IMPROVE
         % FOR NOW WORKS ONLY WHEN ALL CHANNELS ARE ANNOTATED - NOT JUST A FEW
-        mask = false(1, size(F,2));
+        mask = false(1, size(F_segmented,2));
         event_timevector = [];
         
         
-        majority_vote = 0.8;  % this allows to allocate the percentage of channels that need to have the annotation in order to keep it
+        
+        PARTIAL_OR_WHOLE_BRAIN_ANNOTATION = 'WHOLE'   % PARTIAL , WHOLE
+        
+        
+        
+        majority_vote = 0.01;  % this allows to allocate the percentage of channels that need to have the annotation in order to keep it
                               % This is useful only in the case where all
                               % of annotations on all channels - not
                               % partial annotations - TODO - generalize to
                               % partial annotations
         
-        for iSample = 1:size(F,2)
+        channelsContributingToAnnotation = {};
+                              
+        for iSample = 1:size(F_segmented,2)
             % If majority - annotate
-            if sum(F(:, iSample))>= length(T.ChannelNames) * majority_vote
+            if sum(F_segmented(:, iSample))>= length(T.ChannelNames) * majority_vote
                 mask(iSample) = true;
                 event_timevector = [event_timevector Time(iSample)];
+                annotated_Channels_on_Sample = find(F_segmented(:,iSample));
+                
+                if strcmp(PARTIAL_OR_WHOLE_BRAIN_ANNOTATION, 'PARTIAL')
+                    channelsContributingToAnnotation = unique([channelsContributingToAnnotation  {ChannelMat.Channel(annotated_Channels_on_Sample).Name}]);
+                else
+                    channelsContributingToAnnotation = [];
+                end
             end            
         end
         
         
         % Find discontinuities to assign multiple extended events
         a = diff(mask);
-        start = find(a>0);
+        start = find(a>0) + 1;
         stop = find(a<0);
         
         if length(start)~=length(stop)
@@ -249,8 +283,8 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
 %         % Make a summary plot
 %         figure(1); 
 %         
-%         ax = subplot(5,1,[1:4]); imagesc(Time, 1:size(F,1), F); ylabel 'Channel ID'; title 'Ivadomed single Trial Segmentation'; set(ax,'Ydir', 'normal')
-%         ax2 = subplot(5,1,5); plot(Time, mask); hold on; plot(Time(start+1), mask(start+1), '*g', 'linewidth', 8); plot(Time(stop), mask(stop), '*r', 'linewidth', 8); hold off; 
+%         ax = subplot(5,1,[1:4]); imagesc(Time, 1:size(F_segmented,1), F_segmented); ylabel 'Channel ID'; title 'Ivadomed single Trial Segmentation'; set(ax,'Ydir', 'normal')
+%         ax2 = subplot(5,1,5); plot(Time, mask); hold on; plot(Time(start), mask(start), '*g', 'linewidth', 8); plot(Time(stop), mask(stop), '*r', 'linewidth', 8); hold off; 
 %         title 'Annotation Mask (majority vote)'; xlabel 'Time (sec)'; axis ([min(Time), max(Time), -0.5, 1.5]); yticks([0,1])
 %         set(ax,'FontSize',20)
 %         ax.XAxis.Visible = 'off'; % remove y-axis
@@ -268,14 +302,8 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         end
         % Process each event type separately
         for i = 1:size(detectedEvt,2)
-            % Event name
-            if (i > 1)
-                newName = sprintf('%s%d', evtName, i);
-            else
-                newName = evtName;
-            end
             % Get the event to create
-            iEvt = find(strcmpi({dataMat.Events.label}, newName));
+            iEvt = find(strcmpi({dataMat.Events.label}, evtName));
             % Existing event: reset it
             if ~isempty(iEvt)
                 sEvent = dataMat.Events(iEvt);
@@ -287,14 +315,22 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                 % Initialize new event
                 iEvt = length(dataMat.Events) + 1;
                 sEvent = db_template('event');
-                sEvent.label = newName;
+                sEvent.label = evtName;
                 % Get the default color for this new event
                 sEvent.color = panel_record('GetNewEventColor', iEvt, dataMat.Events);
             end
             % Times, samples, epochs
             sEvent.times    = detectedEvt;
             sEvent.epochs   = ones(1, size(sEvent.times,2));
-            sEvent.channels = cell(1, size(sEvent.times, 2));
+            
+            if strcmp(PARTIAL_OR_WHOLE_BRAIN_ANNOTATION, 'PARTIAL')
+                sEvent.channels = cell(1, size(sEvent.times, 2));
+                for iEvent = 1:size(sEvent.times, 2)
+                    sEvent.channels{iEvent} = channelsContributingToAnnotation;
+                end
+            else
+                sEvent.channels = cell(1, size(sEvent.times, 2));
+            end
             sEvent.notes    = cell(1, size(sEvent.times, 2));
             % Add to events structure
             dataMat.Events(iEvt) = sEvent;

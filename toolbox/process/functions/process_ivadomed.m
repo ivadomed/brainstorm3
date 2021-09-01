@@ -176,11 +176,11 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     % TODO - Confirm this is the best approach to check if IVADOMED is
     % installed
     % Check if ivadomed is installed on the Conda environment
-%     output = system('ivadomed -h');
-%     if output~=0
-%         bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
-%         return
-%     end
+    output = system('ivadomed -h');
+    if output~=0
+        bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+        return
+    end
     
     wanted_Fs = sProcess.options.fs.Value{1};
     
@@ -196,6 +196,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         for iInput = 1:length(sInputs)
             dataMat = in_bst(sInputs(iInput).FileName, 'Events');
             events = dataMat.Events;
+
             Time = in_bst(sInputs(iInput).FileName, 'Time');
 
             if isempty(sProcess.options.eventname.Value)
@@ -229,10 +230,30 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     % Reason why all of them are imported here is that in_bst doesn't like
     % to be parallelized (as far as I checked), so can't call it within 
     % convertTopography2matrix
+    
+    empty_IVADOMED_folder = true;
+    
     protocol = bst_get('ProtocolInfo');
     parentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
                        'IvadomedNiftiFiles', ...
                        protocol.Comment);
+                   
+    % Remove previous entries
+    if empty_IVADOMED_folder
+        if exist(parentPath, 'dir') 
+            rmdir(parentPath, 's')
+        end
+        if exist([parentPath '-meta'], 'dir') 
+            rmdir([parentPath '-meta'], 's')
+        end
+%         if exist([parentPath '-segmentation'], 'dir') 
+%             rmdir([parentPath '-segmentation'], 's')
+%         end
+%         if exist([parentPath '-segmentation-meta'], 'dir') 
+%             rmdir([parentPath '-segmentation-meta'], 's')
+%         end
+    end
+                   
     channels_times_path = [parentPath '-meta'];
                    
     % Differentiate simple conversion and segementation paths
@@ -241,10 +262,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         parentPath = [parentPath '-segmentation'];
     end
     
-    % Remove previous entries
-    if exist(parentPath, 'dir') 
-        rmdir(parentPath, 's')
-    end
+    
     
         
     if isempty(sProcess.options.eventname.Value)
@@ -279,6 +297,73 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
       
         % Load data structure
         info_trials(iInput).dataMat = in_bst(sInputs(iInput).FileName);
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        %% ADDING TEST FOR PARTIAL ANNOTATION
+        
+        
+        
+        
+        
+        
+        fake_partial_annotation = 0;
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        if fake_partial_annotation
+        
+        
+            disp('ADDING TEST FOR PARTIAL ANNOTATION')
+
+            info_trials(iInput).dataMat.Events(end+1).label = 'partial_annotation';
+            info_trials(iInput).dataMat.Events(end).color = [0,1,0];
+            info_trials(iInput).dataMat.Events(end).epochs = 1;
+            info_trials(iInput).dataMat.Events(end).times = [sProcess.options.timewindow.Value{1}(1:2)]';
+            info_trials(iInput).dataMat.Events(end).reactTimes = [];
+            info_trials(iInput).dataMat.Events(end).select = 1;
+            info_trials(iInput).dataMat.Events(end).channels = {{'MLT21', 'MLT31','MLT32', 'MLT41', 'MRT21', 'MRT31', 'MRT32', 'MRT41'}}; % Eyes
+%             info_trials(iInput).dataMat.Events(end).channels = {{'MLC17', 'MLC25','MLP45', 'MLP57', 'MRC15', 'MRC16', 'MRC23', 'MRC24'}}; % Quadraplets in the middle
+%             info_trials(iInput).dataMat.Events(end).channels = {{'MLT21'}};
+            info_trials(iInput).dataMat.Events(end).notes = {[]};
+        end
+        %%
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
         % And resample if needed
         current_Fs = round(1/diff(info_trials(iInput).dataMat.Time(1:2)));
@@ -463,14 +548,10 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     %% Export the created cube to NIFTI
     OutputMriFile = export2NIFTI(single_info_trial.sMri, single_info_trial.OutputMriFile);
     
-    %% Export additional files that will be used during segmentation
-    if strcmp(sProcess.options.convert.Value, 'segmentation')
-        
-        export_Channels_Times(single_info_trial, channels_pixel_coordinates, single_info_trial.dataMat.Time');
-        
-        
-        
-    end
+    %% Export times if doing training, and channels' coordinates if doing segmentation
+    export_Channels_Times(single_info_trial, channels_pixel_coordinates, single_info_trial.dataMat.Time', sProcess.options.convert.Value);
+      
+    
     %% Create derivative
 
     % The derivative will be based on a period of time that is annotated to
@@ -515,6 +596,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                         else
                             iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
                             F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                            selectedChannels = iAnnotation_channels;
                         end
                     end
                 else
@@ -531,6 +613,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                         else
                             iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
                             F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                            selectedChannels = iAnnotation_channels;
                         end
                     end
                 end
@@ -569,11 +652,11 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
         %% Export the created cube to NIFTI
         export2NIFTI(single_info_trial.sMri, single_info_trial.OutputMriFileDerivative);
 
-        %% Export the channel coordinates to a .csv file
-        writetable(struct2table(channels_pixel_coordinates), single_info_trial.OutputChannelsFileDerivative, 'Delimiter', '\t')
+%         %% Export the channel coordinates to a .csv file
+%         writetable(struct2table(channels_pixel_coordinates), single_info_trial.OutputChannelsFileDerivative, 'Delimiter', '\t')
 
-        %% Export times to a .csv (This is needed since the trials have been truncated from the JITTER parameter)
-        writematrix(single_info_trial.dataMat.Time', single_info_trial.OutputTimesFileDerivative)
+%         %% Export times to a .csv (This is needed since the trials have been truncated from the JITTER parameter)
+%         writematrix(single_info_trial.dataMat.Time', single_info_trial.OutputTimesFileDerivative)
     else
     	figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
     end
@@ -591,7 +674,10 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         
         
             % TODO - GET MODALITY AUTOMATICALLY
-        [hFig, iDS, iFig] = view_topography(FileName, 'MEG', '2DSensorCap');     
+            
+            Modality = 'MEG';
+            
+        [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DSensorCap');     
 
 %         hFig.CurrentAxes.PlotBoxAspectRatio = [1,1,1];
 
@@ -616,10 +702,18 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         figures_struct(iFile).Status = 'Open';
         
 
-        %TODO - MAKE SURE YOU SET THE COLORMAP TO BE GRAY BEFORE SAVING THE
-        %SLICES
+        %TODO - GET COLORMAP TYPE AUTOMATICALLY (meg - eeg - fnirs)
+        % Get figure colormap
+        
+        ColormapType = lower(Modality);  % meg, eeg, fnirs
+        colormapName = 'gray';
+        bst_colormaps('SetColormapName', ColormapType, colormapName);
 
 
+        % If there are any contours, remove them
+        % Delete contour objects
+% % %         delete(TopoHandles.hContours);
+% % %         GlobalData.DataSet(iDS).Figure(iFig).Handles.hContours = [];
 
     elseif strcmp(action, 'close')
         % Close window
@@ -658,14 +752,9 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     % This is altering the EEG 2D display - NOT THE COLORBAR ON THE BOTTOM
     % RIGHT - THE COLORBAR NEEDS TO BE ADDRESSED
 %     GlobalData.DataSet(iFile).Figure.Handles.DataMinMax = [the_min, the_max];
-    figures_struct(iFile).FigureObject.Handles.DataMinMax = [the_min, the_max];
-    
-    
-%             iChannel = [60:115];
-%             plot(figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,2),'k.')
-%             for i = iChannel
-%                 text(figures_struct(iFile).FigureObject.Handles.MarkersLocs(i,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(i,2),ChannelMat.Channel(selectedChannels(i)).Name)
-%             end
+    figures_struct(iFile).FigureObject.Handles.DataMinMax = [the_min, the_max];    
+    caxis([the_min the_max]);
+
             
     delete(figures_struct(iFile).FigureObject.hFigure.Children(1)) % Gets rid of the colorbar object
 
@@ -675,7 +764,19 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         
     NIFTI = zeros(height, width, length(Time), 'uint8');
     for iTime = 1:length(Time)
-        DataToPlot = F(selectedChannels,iTime);
+        
+        if ~isDerivative
+            DataToPlot = F(selectedChannels,iTime);
+            iChannel = selectedChannels;
+        else
+            [tmp,I,J] = intersect(selectedChannels, figures_struct(iFile).FigureObject.SelectedChannels);
+            iChannel = J';
+%             plot(figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,2),'g.')
+%             for i = 1:length(iChannel)
+%                 text(figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel(i),1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel(i),2),ChannelMat.Channel(selectedChannels(i)).Name)
+%             end            
+            DataToPlot = F(selectedChannels,iTime);
+        end
 
         % ===== APPLY TRANSFORMATION =====
         % Mapping on a different surface (magnetic source reconstruction of just smooth display)
@@ -683,7 +784,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         if ~isempty(figures_struct(iFile).FigureObject.Handles.Wmat)
             % Apply interpolation matrix sensors => display surface
 %             if (size(GlobalData.DataSet(iFile).Figure.Handles.Wmat,1) == length(DataToPlot))
-            if (size(figures_struct(iFile).FigureObject.Handles.Wmat,1) == length(DataToPlot))
+            if (size(figures_struct(iFile).FigureObject.Handles.Wmat,2) == length(DataToPlot)) % Topomap checks for the other dimension, it might be wrong
 %                 DataToPlot = full(GlobalData.DataSet(iFile).Figure.Handles.Wmat * DataToPlot);
                 DataToPlot = full(figures_struct(iFile).FigureObject.Handles.Wmat * DataToPlot);
             % Find first corresponding indices
@@ -696,6 +797,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
             end
         end         
 
+
 %         set(GlobalData.DataSet(iFile).Figure.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
         set(figures_struct(iFile).FigureObject.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
 
@@ -705,6 +807,11 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         
         if isDerivative && all(DataToPlot==0) % This is done since even if all channels are 0, there is still a gray image of the topography displayed to distringuish from the background
             img_gray(img_gray<170)=0;
+        elseif isDerivative
+            
+            threshold = 145;  % For annotating a single channel assigned it to 133
+            img_gray(img_gray<threshold)=0;
+            img_gray(img_gray>=threshold)=1;
         end
         
         NIFTI(:,:,iTime) = img_gray;
@@ -721,13 +828,31 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     pos = get(axes_handle,'position');
     xlim = get(axes_handle,'xlim');
     ylim = get(axes_handle,'ylim');
+    
+    % Get the monitor resolution
+    set(0,'units','pixels')  
+    %Obtains this pixel information
+    Pix_SS = get(0,'screensize');
+
+    if all(Pix_SS == [1 1 2560 1440])
+        % MONITOR
+        % HARDCODED CHANNEL POSITION CORRECTION - TODO
+        y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+        y_in_pixels = y_in_pixels/0.84;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+        x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+        x_in_pixels = 2 + x_in_pixels/1.14;
+    elseif all(Pix_SS == [1 1 1920 1080])
+        % LAPTOP
+        % HARDCODED CHANNEL POSITION CORRECTION - TODO
+        y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+        y_in_pixels = y_in_pixels/0.975;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+        x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+        x_in_pixels = 1 + x_in_pixels/1.14;
+    else
+        error('Unknown monitor - Need to calibrate - Also time to get rid of these harcoded parts!')
+    end
 
     
-    % HARDCODED CHANNEL POSITION CORRECTION - TODO
-    y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-    y_in_pixels = y_in_pixels/0.84;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
-    x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-    x_in_pixels = 2 + x_in_pixels/1.14;
     
     %% Gather channel coordinates in a struct
     channels_pixel_coordinates = struct;
@@ -738,13 +863,13 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         channels_pixel_coordinates(i).y_coordinates = round(y_in_pixels(i));
     end
     
-    %%
+     %%
 %     h = figure(10);
-%     imagesc(squeeze(NIFTI(:,:,1)))
+%     imagesc(squeeze(NIFTI(:,:,end)))
 %     colormap('gray')
 % 
 %     hold on
-% 
+%     plot(y_in_pixels, x_in_pixels,'*r')
 %     plot(y_in_pixels(iChannel), x_in_pixels(iChannel),'*g')
 %     hold off
     
@@ -785,22 +910,33 @@ function OutputMriFile = export2NIFTI(sMri, OutputMriFile)
 end
 
 
-function export_Channels_Times(single_info_trial, channels_pixel_coordinates, Time)
-    % Create the output folder first
-    [filepath,name,ext] = fileparts(single_info_trial.OutputChannelsFile);
-    if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
-        mkdir(bst_fileparts(single_info_trial.OutputChannelsFile))
-    end    
+function export_Channels_Times(single_info_trial, channels_pixel_coordinates, Time, method)
 
-    % Export the channel coordinates to a .csv file
-    writetable(struct2table(channels_pixel_coordinates), single_info_trial.OutputChannelsFile, 'Delimiter', '\t')
-    
-    % For segmentation we dont really need this - we have the info from the
-    % trials themselved - they are not truncated as is the case with the
-    % training part
-%     % Export times to a .csv (This is needed since the trials have been truncated from the JITTER parameter)
-%     writematrix(Time, single_info_trial.OutputTimesFile)
-    
+    switch method
+        case 'conversion' 
+            % For segmentation we dont really need this - we have the info from the
+            % trials themselved - they are not truncated as is the case with the
+            % training part
+            % Create the output folder first
+            [filepath,name,ext] = fileparts(single_info_trial.OutputTimesFile);
+            if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
+                mkdir(bst_fileparts(single_info_trial.OutputChannelsFile))
+            end
+            
+            % Export times to a .csv (This is needed since the trials have been truncated from the JITTER parameter)
+            writematrix(Time, single_info_trial.OutputTimesFile)
+            
+        case 'segmentation'
+            % Create the output folder first
+            [filepath,name,ext] = fileparts(single_info_trial.OutputChannelsFile);
+            if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
+                mkdir(bst_fileparts(single_info_trial.OutputChannelsFile))
+            end    
+
+            % Export the channel coordinates to a .csv file
+            writetable(struct2table(channels_pixel_coordinates), single_info_trial.OutputChannelsFile, 'Delimiter', '\t')
+        
+    end
 end
 
 
