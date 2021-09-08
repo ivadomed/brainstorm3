@@ -187,44 +187,48 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     
     %% Do some checks on the parameters
     
-    if strcmp(sProcess.options.convert.Value, 'conversion')
-    
-        % In case the selected event is single event, or the eventname isempty,
-        % make sure the time-window has values
-        inputs_to_remove = false(length(sInputs),1);
-
-        for iInput = 1:length(sInputs)
-            dataMat = in_bst(sInputs(iInput).FileName, 'Events');
-            events = dataMat.Events;
-
-            Time = in_bst(sInputs(iInput).FileName, 'Time');
-
-            if isempty(sProcess.options.eventname.Value)
-                if length(sProcess.options.timewindow.Value{1})<2 || isempty(sProcess.options.timewindow.Value{1}) || ...
-                        sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
-                    inputs_to_remove(iInput) = true;
-                    bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
-                end
-            else
-                [isSelectedEventPresent, index] = ismember(sProcess.options.eventname.Value, {events.label});
-
-                if ~isSelectedEventPresent
-                    inputs_to_remove(iInput) = true;
-                    bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
-                else
-                    if sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
-                        inputs_to_remove(iInput) = true;
-                        bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
-                    end
-
-                end
-            end
-        end
-
-        % The following works on Matlab R2021a - I think older versions
-        % need another command to squeeze the empty structure entries - TODO
-        sInputs(inputs_to_remove) = [];
-    end
+% %     if strcmp(sProcess.options.convert.Value, 'conversion')
+% %     
+% %         % In case the selected event is single event, or the eventname isempty,
+% %         % make sure the time-window has values
+% %         inputs_to_remove = false(length(sInputs),1);
+% % 
+% %         for iInput = 1:length(sInputs)
+% %             dataMat = in_bst(sInputs(iInput).FileName, 'Events');
+% %             events = dataMat.Events;
+% % 
+% %             Time = in_bst(sInputs(iInput).FileName, 'Time');
+% % 
+% %             if isempty(sProcess.options.eventname.Value)
+% %                 if length(sProcess.options.timewindow.Value{1})<2 || isempty(sProcess.options.timewindow.Value{1}) || ...
+% %                         sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
+% %                     inputs_to_remove(iInput) = true;
+% %                     bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
+% %                 end
+% %             else
+% %                 if isfield(events, 'label')
+% %                     [isSelectedEventPresent, index] = ismember(sProcess.options.eventname.Value, {events.label});
+% %                 else
+% %                     isSelectedEventPresent = false;
+% %                 end
+% % 
+% %                 if ~isSelectedEventPresent
+% %                     inputs_to_remove(iInput) = true;
+% %                     bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
+% %                 else
+% %                     if sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
+% %                         inputs_to_remove(iInput) = true;
+% %                         bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
+% %                     end
+% % 
+% %                 end
+% %             end
+% %         end
+% % 
+% %         % The following works on Matlab R2021a - I think older versions
+% %         % need another command to squeeze the empty structure entries - TODO
+% %         sInputs(inputs_to_remove) = [];
+% %     end
     
     %% Gather F  and filenames for all files here - This shouldn't create a memory issue
     % Reason why all of them are imported here is that in_bst doesn't like
@@ -297,72 +301,6 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
       
         % Load data structure
         info_trials(iInput).dataMat = in_bst(sInputs(iInput).FileName);
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        %% ADDING TEST FOR PARTIAL ANNOTATION
-        
-        
-        
-        
-        
-        
-        fake_partial_annotation = 0;
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        if fake_partial_annotation
-        
-        
-            disp('ADDING TEST FOR PARTIAL ANNOTATION')
-
-            info_trials(iInput).dataMat.Events(end+1).label = 'partial_annotation';
-            info_trials(iInput).dataMat.Events(end).color = [0,1,0];
-            info_trials(iInput).dataMat.Events(end).epochs = 1;
-            info_trials(iInput).dataMat.Events(end).times = [sProcess.options.timewindow.Value{1}(1:2)]';
-            info_trials(iInput).dataMat.Events(end).reactTimes = [];
-            info_trials(iInput).dataMat.Events(end).select = 1;
-            info_trials(iInput).dataMat.Events(end).channels = {{'MLT21', 'MLT31','MLT32', 'MLT41', 'MRT21', 'MRT31', 'MRT32', 'MRT41'}}; % Eyes
-%             info_trials(iInput).dataMat.Events(end).channels = {{'MLC17', 'MLC25','MLP45', 'MLP57', 'MRC15', 'MRC16', 'MRC23', 'MRC24'}}; % Quadraplets in the middle
-%             info_trials(iInput).dataMat.Events(end).channels = {{'MLT21'}};
-            info_trials(iInput).dataMat.Events(end).notes = {[]};
-        end
-        %%
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
         
         
         % And resample if needed
@@ -498,6 +436,136 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     session = single_info_trial.session;
     trial   = single_info_trial.trial;
     
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+        figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct);
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+        %% ADDING TEST FOR PARTIAL ANNOTATION
+        
+        
+        
+        
+        
+        
+        fake_partial_annotation = 1;
+        
+        
+        randomize_annotation_position_for_some_channels = 1;
+        
+        
+        
+        
+        
+        
+        
+        if fake_partial_annotation
+        
+        
+            disp('ADDING TEST FOR PARTIAL ANNOTATION')
+
+            single_info_trial.dataMat.Events(end+1).label = 'partial_annotation';
+            single_info_trial.dataMat.Events(end).color = [0,1,0];
+            single_info_trial.dataMat.Events(end).epochs = 1;
+            single_info_trial.dataMat.Events(end).times = [sProcess.options.timewindow.Value{1}(1:2)]';
+            single_info_trial.dataMat.Events(end).reactTimes = [];
+            single_info_trial.dataMat.Events(end).select = 1;
+
+            
+            if randomize_annotation_position_for_some_channels
+                
+                % The usage for this is to randomly change the position of
+                % 4 channels around each to random places around the head,
+                % so the model does not learn the position
+                % Besides the annotation on the events, the F matrix also
+                % has to accommodate that change
+                
+                nChannels = 8;
+                clusters = ivadomed_getNchannelsAroundCenter(nChannels, single_info_trial.ChannelMat, figures_struct(iFile).FigureObject);
+                
+                single_info_trial.dataMat.Events(end).channels = {[clusters.SelectedChannelsNames]};
+                annotated_indicesOnChannelMat = [clusters.SelectedIndicesOnChannelMat];
+                
+                eyes_channel_Names = {'MLT21', 'MLT31','MLT32', 'MLT41', 'MLT51', 'MLT42', 'MLT14', 'MLT25', 'MRT21', 'MRT31', 'MRT32', 'MRT41', 'MRF14', 'MRF25', 'MRT51', 'MRT42'};
+                eyes_channel_indicesOnChannelMat =  find(ismember({single_info_trial.ChannelMat.Channel.Name}, eyes_channel_Names));
+
+%                 hold on
+%                 plot(clusters(1).CenterCoords(1), clusters(1).CenterCoords(2),'*b')
+%                 plot(clusters(1).SelectedChannelsCoords(:,1),clusters(1).SelectedChannelsCoords(:,2),'bo')
+%                 plot(clusters(2).CenterCoords(1), clusters(2).CenterCoords(2),'*r')
+%                 plot(clusters(2).SelectedChannelsCoords(:,1),clusters(2).SelectedChannelsCoords(:,2),'ro')
+%                 hold off
+
+                
+                
+                
+            
+            else  % Annotate only the 4 channels on each eye
+                single_info_trial.dataMat.Events(end).channels = {{'MLT21', 'MLT31','MLT32', 'MLT41', 'MRT21', 'MRT31', 'MRT32', 'MRT41'}}; % Eyes
+            end
+            
+            
+%             info_trials(iInput).dataMat.Events(end).channels = {{'MLT21'}};
+            single_info_trial.dataMat.Events(end).notes = {[]};
+        end
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        %%
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     %% ADD A JITTER
     % We want to avoid the model learning the positioning of the event so
     % we crop the time dimension on both sides with a jitter
@@ -508,7 +576,18 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
         discardElementsEnd = round(randi(sProcess.options.jitter.Value{1}*1000)/1000 * current_Fs);
 
         single_info_trial.dataMat.Time = single_info_trial.dataMat.Time(1+discardElementsBeginning:end-discardElementsEnd);
-        single_info_trial.dataMat.F = single_info_trial.dataMat.F(:,1+discardElementsBeginning:end-discardElementsEnd);
+        
+        if randomize_annotation_position_for_some_channels
+            temp = single_info_trial.dataMat.F(:,1+discardElementsBeginning:end-discardElementsEnd);
+            temp_eyes = temp(eyes_channel_indicesOnChannelMat,:);
+            temp_new_position_eyes = temp(annotated_indicesOnChannelMat,:);
+            
+            temp(eyes_channel_indicesOnChannelMat,:) = temp_new_position_eyes;
+            temp(annotated_indicesOnChannelMat,:) = temp_eyes;
+        	single_info_trial.dataMat.F = temp;
+        else
+            single_info_trial.dataMat.F = single_info_trial.dataMat.F(:,1+discardElementsBeginning:end-discardElementsEnd);
+        end
     end
     
 %     %% CHANGE THE COLORMAP DISPLAYED ON THE BOTTOM LEFT
@@ -535,7 +614,6 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     
     %% Gather the topography slices to a single 3d matrix
     % Here the time dimension is the 3rd dimension
-    figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct);
     [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 0);
 %     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
 
@@ -567,7 +645,6 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     % event.
     % In no eventlabel is selected, the annotation will be based on the time-window
     % selected, with the TIMING MATCHING THE TRIAL-TIME VALUES
-    
     
     if strcmp(sProcess.options.convert.Value, 'conversion')  % Create the derivative Only during conversion for training
     
