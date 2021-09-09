@@ -46,7 +46,14 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.nInputs     = 1;
     sProcess.nMinFiles   = 1;
     
+    % Modality Selection
+    sProcess.options.label11.Comment = '<BR><B>Modality selection:</B>';
+    sProcess.options.label11.Type    = 'label';
+    sProcess.options.modality.Comment = {'MEG', 'EEG', 'fNIRS'};
+    sProcess.options.modality.Type    = 'radio';
+    sProcess.options.modality.Value   = 1;
     
+    % BIDS
     sProcess.options.label1.Comment = '<B>BIDS conversion parameters:</B>';
     sProcess.options.label1.Type    = 'label';
     % Event name
@@ -72,7 +79,7 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     % Needed Jitter for cropping
     sProcess.options.jitter.Comment = 'Jitter value';
     sProcess.options.jitter.Type    = 'value';
-    sProcess.options.jitter.Value   = {100, 'ms', 0};
+    sProcess.options.jitter.Value   = {200, 'ms', 0};
     % Jitter comment
     sProcess.options.jitter_help.Comment = '<I><FONT color="#777777">This is used to crop the edges of each trial so the trained model doesn"t learn the position of the event</FONT></I>';
     sProcess.options.jitter_help.Type    = 'label';
@@ -100,9 +107,16 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.convert.Value  = 'conversion';  % Other option: 'segmentation'
     sProcess.options.convert.Hidden = 1;
     
-    % Method: Command to use
-    sProcess.options.label3.Comment = '<BR><B>Command to execute:</B>';
+    % Display example image in FSLeyes
+    sProcess.options.label3.Comment = '<B>FSLeyes </B>';
     sProcess.options.label3.Type    = 'label';
+    sProcess.options.dispExample.Comment = 'Open an example image/derivative on FSLeyes';
+    sProcess.options.dispExample.Type    = 'checkbox';
+    sProcess.options.dispExample.Value   = 0;
+    
+    % Method: Command to use
+    sProcess.options.label4.Comment = '<BR><B>Command to execute:</B>';
+    sProcess.options.label4.Type    = 'label';
     sProcess.options.command.Comment = {'Training', 'Testing', 'Segmentation'};
     sProcess.options.command.Type    = 'radio';
     sProcess.options.command.Value   = 1;
@@ -115,8 +129,8 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.gpu.Type    = 'value';
     sProcess.options.gpu.Value   = {[0,1,2,3], 'list', 0};
      % Method: Model selection
-    sProcess.options.label4.Comment = '<B>Model selection:</B>';
-    sProcess.options.label4.Type    = 'label';
+    sProcess.options.label5.Comment = '<B>Model selection:</B>';
+    sProcess.options.label5.Type    = 'label';
     sProcess.options.modelselection.Comment = {'default_model'; 'FiLMedUnet'; 'HeMISUnet'; 'Modified3DUNet'};
     sProcess.options.modelselection.Type    = 'radio';
     sProcess.options.modelselection.Value   = 1;
@@ -129,8 +143,8 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.softgt.Type    = 'checkbox';
     sProcess.options.softgt.Value   = 0;
     % Method: Average or PCA
-    sProcess.options.label5.Comment = '<B>Slice Axis:</B>';
-    sProcess.options.label5.Type    = 'label';
+    sProcess.options.label6.Comment = '<B>Slice Axis:</B>';
+    sProcess.options.label6.Type    = 'label';
     sProcess.options.sliceaxis.Comment = {'Axial'; 'Sagittal'; 'Coronal'};
     sProcess.options.sliceaxis.Type    = 'radio';
     sProcess.options.sliceaxis.Value   = 1;
@@ -139,8 +153,8 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.loss.Type    = 'text';
     sProcess.options.loss.Value   = 'DiceLoss';
     % Uncertainty
-    sProcess.options.label6.Comment = '<B>Uncertainty</B>';
-    sProcess.options.label6.Type    = 'label';
+    sProcess.options.label7.Comment = '<B>Uncertainty</B>';
+    sProcess.options.label7.Type    = 'label';
     sProcess.options.epistemic.Comment = 'Epistemic';
     sProcess.options.epistemic.Type    = 'checkbox';
     sProcess.options.epistemic.Value   = 1;
@@ -171,64 +185,55 @@ end
 
 %% ===== RUN =====
 function OutputFiles = Run(sProcess, sInputs, return_filenames)
-    global GlobalData
 
-    % TODO - Confirm this is the best approach to check if IVADOMED is
-    % installed
-    % Check if ivadomed is installed on the Conda environment
-    output = system('ivadomed -h');
-    if output~=0
-        bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
-        return
-    end
-    
+ 
     wanted_Fs = sProcess.options.fs.Value{1};
     
     
     %% Do some checks on the parameters
     
-% %     if strcmp(sProcess.options.convert.Value, 'conversion')
-% %     
-% %         % In case the selected event is single event, or the eventname isempty,
-% %         % make sure the time-window has values
-% %         inputs_to_remove = false(length(sInputs),1);
-% % 
-% %         for iInput = 1:length(sInputs)
-% %             dataMat = in_bst(sInputs(iInput).FileName, 'Events');
-% %             events = dataMat.Events;
-% % 
-% %             Time = in_bst(sInputs(iInput).FileName, 'Time');
-% % 
-% %             if isempty(sProcess.options.eventname.Value)
-% %                 if length(sProcess.options.timewindow.Value{1})<2 || isempty(sProcess.options.timewindow.Value{1}) || ...
-% %                         sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
-% %                     inputs_to_remove(iInput) = true;
-% %                     bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
-% %                 end
-% %             else
-% %                 if isfield(events, 'label')
-% %                     [isSelectedEventPresent, index] = ismember(sProcess.options.eventname.Value, {events.label});
-% %                 else
-% %                     isSelectedEventPresent = false;
-% %                 end
-% % 
-% %                 if ~isSelectedEventPresent
-% %                     inputs_to_remove(iInput) = true;
-% %                     bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
-% %                 else
-% %                     if sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
-% %                         inputs_to_remove(iInput) = true;
-% %                         bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
-% %                     end
-% % 
-% %                 end
-% %             end
-% %         end
-% % 
-% %         % The following works on Matlab R2021a - I think older versions
-% %         % need another command to squeeze the empty structure entries - TODO
-% %         sInputs(inputs_to_remove) = [];
-% %     end
+    if strcmp(sProcess.options.convert.Value, 'conversion')
+    
+        % In case the selected event is single event, or the eventname isempty,
+        % make sure the time-window has values
+        inputs_to_remove = false(length(sInputs),1);
+
+        for iInput = 1:length(sInputs)
+            dataMat = in_bst(sInputs(iInput).FileName, 'Events');
+            events = dataMat.Events;
+
+            Time = in_bst(sInputs(iInput).FileName, 'Time');
+
+            if isempty(sProcess.options.eventname.Value)
+                if length(sProcess.options.timewindow.Value{1})<2 || isempty(sProcess.options.timewindow.Value{1}) || ...
+                        sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
+                    inputs_to_remove(iInput) = true;
+                    bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
+                end
+            else
+                if isfield(events, 'label')
+                    [isSelectedEventPresent, index] = ismember(sProcess.options.eventname.Value, {events.label});
+                else
+                    isSelectedEventPresent = false;
+                end
+
+                if ~isSelectedEventPresent
+                    inputs_to_remove(iInput) = true;
+                    bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
+                else
+                    if sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
+                        inputs_to_remove(iInput) = true;
+                        bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
+                    end
+
+                end
+            end
+        end
+
+        % The following works on Matlab R2021a - I think older versions
+        % need another command to squeeze the empty structure entries - TODO
+        sInputs(inputs_to_remove) = [];
+    end
     
     %% Gather F  and filenames for all files here - This shouldn't create a memory issue
     % Reason why all of them are imported here is that in_bst doesn't like
@@ -419,6 +424,23 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     export_participants_json(parentPath)
     export_dataset_description(parentPath)
     export_readme(parentPath)
+    
+    
+    if sProcess.options.dispExample.Value
+        % === OPEN EXAMPLE IMAGE/DERIVATIVE IN FSLEYES ===
+        % Check if FSLeyes is installed in the Conda environment
+        output = system('fsleyes -h');
+        command_to_run = ['fsleyes ' info_trials(1).OutputMriFile '.gz -cm render3 ' info_trials(1).OutputMriFileDerivative '.gz -cm green --alpha 60' ];
+        if output~=0
+            bst_report('Warning', sProcess, sInputs(1), 'Fsleyes package is not accessible. Are you running Matlab through an anaconda environment that has Fsleyes installed?');
+            disp(command_to_run)
+            return
+        else
+            system(['fsleyes ' info_trials(1).OutputMriFile '.gz -cm render3 ' info_trials(1).OutputMriFileDerivative '.gz -cm green --alpha 50' ]);
+        end
+    end
+    
+    
 end
 
 
@@ -437,6 +459,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     trial   = single_info_trial.trial;
     
     
+    modality = sProcess.options.modality.Comment{sProcess.options.modality.Value};
     
     
     
@@ -448,8 +471,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     
     
     
-    
-        figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct);
+        figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct, modality);
 
     
     
@@ -468,21 +490,25 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
         
         
         
-        fake_partial_annotation = 1;
+        fake_partial_annotation = 0;
         
         
-        randomize_annotation_position_for_some_channels = 1;
-        
-        
-        
+        randomize_annotation_position_for_some_channels = 0;
         
         
         
         
+        
+        
+        eyes_channel_Names = {'MLT21', 'MLT31','MLT32', 'MLT41', 'MLT51', 'MLT42', 'MLT14', 'MLT25', 'MRT21', 'MRT31', 'MRT32', 'MRT41', 'MRF14', 'MRF25', 'MRT51', 'MRT42'};
+
         if fake_partial_annotation
         
         
             disp('ADDING TEST FOR PARTIAL ANNOTATION')
+            
+
+            
 
             single_info_trial.dataMat.Events(end+1).label = 'partial_annotation';
             single_info_trial.dataMat.Events(end).color = [0,1,0];
@@ -490,7 +516,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
             single_info_trial.dataMat.Events(end).times = [sProcess.options.timewindow.Value{1}(1:2)]';
             single_info_trial.dataMat.Events(end).reactTimes = [];
             single_info_trial.dataMat.Events(end).select = 1;
-
+            single_info_trial.dataMat.Events(end).notes = {[]};
             
             if randomize_annotation_position_for_some_channels
                 
@@ -500,13 +526,12 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                 % Besides the annotation on the events, the F matrix also
                 % has to accommodate that change
                 
-                nChannels = 8;
+                nChannels = length(eyes_channel_Names)/2;  % The assumption here is that each cluster on each eye has the same number of channels
                 clusters = ivadomed_getNchannelsAroundCenter(nChannels, single_info_trial.ChannelMat, figures_struct(iFile).FigureObject);
                 
                 single_info_trial.dataMat.Events(end).channels = {[clusters.SelectedChannelsNames]};
                 annotated_indicesOnChannelMat = [clusters.SelectedIndicesOnChannelMat];
                 
-                eyes_channel_Names = {'MLT21', 'MLT31','MLT32', 'MLT41', 'MLT51', 'MLT42', 'MLT14', 'MLT25', 'MRT21', 'MRT31', 'MRT32', 'MRT41', 'MRF14', 'MRF25', 'MRT51', 'MRT42'};
                 eyes_channel_indicesOnChannelMat =  find(ismember({single_info_trial.ChannelMat.Channel.Name}, eyes_channel_Names));
 
 %                 hold on
@@ -516,17 +541,28 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 %                 plot(clusters(2).SelectedChannelsCoords(:,1),clusters(2).SelectedChannelsCoords(:,2),'ro')
 %                 hold off
 
-                
-                
-                
-            
-            else  % Annotate only the 4 channels on each eye
-                single_info_trial.dataMat.Events(end).channels = {{'MLT21', 'MLT31','MLT32', 'MLT41', 'MRT21', 'MRT31', 'MRT32', 'MRT41'}}; % Eyes
+            else  % Annotate only the 8 channels on each eye
+                single_info_trial.dataMat.Events(end).channels = {eyes_channel_Names}; % Eyes
             end
             
+        end
+        
+        
+        if randomize_annotation_position_for_some_channels && ~fake_partial_annotation
             
-%             info_trials(iInput).dataMat.Events(end).channels = {{'MLT21'}};
-            single_info_trial.dataMat.Events(end).notes = {[]};
+            % The usage for this is to randomly change the position of
+            % 4 channels around each to random places around the head,
+            % so the model does not learn the position
+            % Besides the annotation on the events, the F matrix also
+            % has to accommodate that change
+
+            nChannels = 8;
+            clusters = ivadomed_getNchannelsAroundCenter(nChannels, single_info_trial.ChannelMat, figures_struct(iFile).FigureObject);
+            annotated_indicesOnChannelMat = [clusters.SelectedIndicesOnChannelMat];
+            eyes_channel_indicesOnChannelMat =  find(ismember({single_info_trial.ChannelMat.Channel.Name}, eyes_channel_Names));
+
+        else  % Annotate only 8 channels on each eye
+            single_info_trial.dataMat.Events(end).channels = {eyes_channel_Names}; % Eyes
         end
         
         
@@ -543,23 +579,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
         
         
         
-        
-        
-        
-        
         %%
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
     
     
@@ -615,7 +635,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     %% Gather the topography slices to a single 3d matrix
     % Here the time dimension is the 3rd dimension
     [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 0);
-%     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
+%     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality);
 
     %% Get the output filename
     
@@ -702,9 +722,9 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
             F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
         end
 
-        figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct);
+        figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct, modality);
         [NIFTI_derivative, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F_derivative, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 1);
-        figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
+        figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality);
 
 
         % Set the values to 0 and 1 for the annotations
@@ -735,11 +755,11 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 %         %% Export times to a .csv (This is needed since the trials have been truncated from the JITTER parameter)
 %         writematrix(single_info_trial.dataMat.Time', single_info_trial.OutputTimesFileDerivative)
     else
-    	figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct);
+    	figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality);
     end
 end
 
-function figures_struct = open_close_topography_window(FileName, action, iFile, figures_struct)
+function figures_struct = open_close_topography_window(FileName, action, iFile, figures_struct, Modality)
     global GlobalData
     if strcmp(action, 'open')
         %% Open a window to inherit properties
@@ -749,10 +769,6 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         % Modality       : {'MEG', 'MEG GRAD', 'MEG MAG', 'EEG', 'ECOG', 'SEEG', 'NIRS'}
         % TopoType       : {'3DSensorCap', '2DDisc', '2DSensorCap', 2DLayout', '3DElectrodes', '3DElectrodes-Cortex', '3DElectrodes-Head', '3DElectrodes-MRI', '3DOptodes', '2DElectrodes'}
         
-        
-            % TODO - GET MODALITY AUTOMATICALLY
-            
-            Modality = 'MEG';
             
         [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DSensorCap');     
 
@@ -760,11 +776,12 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
 
 %         set(hFig, 'Visible', 'off');
 %         set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 355 258]);  % THE AXIS IS [~,~,277.5, 238] WITH THIS CONFIGURATION
-        set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 177 119]);
+        set(hFig, 'Resize', 0);
+        set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 177.5 129]);
         
 %         AxesH = hFig.Children(2);
         AxesH.PlotBoxAspectRatio = [1,1,1];
-%         pause(.1);
+        pause(.05);
 %         set(AxesH, 'Units', 'pixels', 'Position', [10, 10, 100, 86]);
 %         
 %                 daspect([1 1 1])
@@ -922,9 +939,9 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         % LAPTOP
         % HARDCODED CHANNEL POSITION CORRECTION - TODO
         y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-        y_in_pixels = y_in_pixels/0.975;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+        y_in_pixels = 0 + y_in_pixels/0.836;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
         x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-        x_in_pixels = 1 + x_in_pixels/1.14;
+        x_in_pixels = 1 + x_in_pixels/1.23;
     else
         error('Unknown monitor - Need to calibrate - Also time to get rid of these harcoded parts!')
     end
@@ -941,25 +958,15 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     end
     
      %%
+%      disp(1)
 %     h = figure(10);
-%     imagesc(squeeze(NIFTI(:,:,end)))
+%     imagesc(squeeze(NIFTI(:,:,1)))
 %     colormap('gray')
 % 
 %     hold on
 %     plot(y_in_pixels, x_in_pixels,'*r')
 %     plot(y_in_pixels(iChannel), x_in_pixels(iChannel),'*g')
 %     hold off
-    
-    %%
-    
-%     %% CONSIDER DOWNSAMPLING - THIS WILL AFFECT THE COORDINATES OF THE ELECTRODES - TODO
-%     scale = 0.25;
-%     NIFTI2 = imresize(NIFTI, scale);
-% %     
-%     figure(1);
-%     imagesc(squeeze(NIFTI2(:,:,50)));
-%     hold on
-%     plot(ceil(scale*y_in_pixels(iChannel)), ceil(scale*x_in_pixels(iChannel)),'g*')
 
     
 end
