@@ -71,15 +71,33 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.convert.Value  = 'segmentation';  % Other option: 'conversion'
     sProcess.options.convert.Hidden = 1;
     % BIDS subject selection
+    % Method: BIDS subject selection
+    sProcess.options.annotationLabel.Comment = '<I><FONT color="#FF0000">Whole Head annotation (all channels) or partial (annotate a few channels)</FONT></I>';
+    sProcess.options.annotationLabel.Type    = 'label';
+    sProcess.options.annotation.Comment = {'Whole', 'Partial'};
+    sProcess.options.annotation.Type    = 'radio';
+    sProcess.options.annotation.Value   = 1;
+    % BIDS subject selection
     sProcess.options.bidsFolders.Comment = {'Normal', 'Separate runs/sessions as different subjects'};
     sProcess.options.bidsFolders.Type    = 'radio';
     sProcess.options.bidsFolders.Value   = 1;
     sProcess.options.bidsFolders.Hidden = 1;
+    % GPU ID to run inference on - % this allows to allocate the percentage
+    % of channels that need to have the annotation in order to keep the
+    % annotation
+    sProcess.options.majorityVote.Comment = 'Majority Vote Percentage [0,100] <I><FONT color="#FF0000">OF TOTAL MEG/EEG CHANNELS</FONT></I>';
+    sProcess.options.majorityVote.Type    = 'value';
+    sProcess.options.majorityVote.Value   = {50, [], 0};
     % Parallel processing
     sProcess.options.paral.Comment = 'Parallel processing';
     sProcess.options.paral.Type    = 'checkbox';
     sProcess.options.paral.Value   = 0;
     sProcess.options.paral.Hidden = 1;
+    % Display example image in FSLeyes
+    sProcess.options.dispExample.Comment = 'Open an example image/derivative on FSLeyes';
+    sProcess.options.dispExample.Type    = 'checkbox';
+    sProcess.options.dispExample.Value   = 0;
+    sProcess.options.dispExample.Hidden  = 1;
     
 end
 
@@ -92,7 +110,32 @@ end
 
 %% ===== RUN =====
 function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>   
-    % ===== GET OPTIONS =====
+    
+    %% Check if IVADOMED is installed/accessible
+    
+    
+    
+    
+    %% CHECK IVADOMED EXISTS
+    fname = bst_fullfile(bst_get('UserPluginsDir'), 'ivadomed', 'ivadomed-master', 'ivadomed', 'main.py');
+    if ~(exist(fname, 'file') == 2)
+        
+        % Check if ivadomed can be accessed from a system call
+        % in case the user installed it outside of Brainstorm
+        output = system('ivadomed -h');
+        if output~=0
+            bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+            return
+        else
+            ivadomed_call = 'ivadomed';
+        end
+    else
+        % Call to be used as a system command when calling ivadomed
+        ivadomed_call = ['python3 ' fname];
+    end
+    
+
+    %% ===== GET OPTIONS =====
     % Event name
     evtName = strtrim(sProcess.options.eventname.Value);
     modelFile = sProcess.options.evtfile.Value{1};
@@ -103,12 +146,10 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         return;
     end
     
-    %% OPTION TO CHANGE THE CONFIG FILE
-    %  PROBABLY WONT BE NEEDED - FLAG CALLS SHOULD BE ENOUGH FOR
-    %  SEGMENTATION
+    %% CHANGE THE CONFIG FILE TO RUN LOCALLY
     
-    % Grab the config.json file that was used and assign the method to
-    % perform segmentation
+    % Grab the config.json file that was used and assign the gpu that the
+    % user selected
     
     ivadomedOutputFolder = bst_fileparts(bst_fileparts(modelFile));
     configFile = bst_fullfile(ivadomedOutputFolder, 'config_file.json');
@@ -117,35 +158,26 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     raw = fread(fid,inf);
     str = char(raw');
     fclose(fid);
+    
+    %Substitute null values with nan - This is needed for cause jsonencode
+    %changes null values to [] and ultimately ivadomed throws errors
+    str = strrep(str, 'null', 'NaN');
+        
     config_struct = jsondecode(str);
     
-%     config_struct.command = 'segment';
-%     config_struct.gpu_ids = 0  THIS SHOULD BE A LIST IN THE CONFIG FILE
-%     
-%     % Save back to json (Make it a bit more readable - still not great)
-%     txt = jsonencode(config_struct);
-%     txt = strrep(txt, ',', sprintf(',\r'));
-%     txt = strrep(txt, '[{', sprintf('[\r{\r'));
-%     txt = strrep(txt, '}]', sprintf('\r}\r]'));
-%     
-% %     fid = fopen(configFile, 'w');
-%     fid = fopen('/home/nas/Desktop/a.txt', 'w');
-%     fwrite(fid, txt);
-%     fclose(fid);
+    %config_struct.command = 'segment'; % Not needed - use CLI call
+    config_struct.gpu_ids = {sProcess.options.gpu.Value{1}};
+    
+    % Save back to json
+    txt = jsonencode(config_struct, 'PrettyPrint', true);
+    
+    fid = fopen(configFile, 'w');
+    fwrite(fid, txt);
+    fclose(fid);
 
-    %% Check if IVADOMED is installed/accessible
-    
-    output = system('ivadomed -h');
-    if output~=0
-        bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
-        return
-    end
-    
-    
     
     %% Important files/folders
     ivadomedOutputFolder = bst_fileparts(bst_fileparts(modelFile));  % Output of the trained model
-    configFile = bst_fullfile(ivadomedOutputFolder, 'config_file.json');
     
     protocol = bst_get('ProtocolInfo');
     parentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
@@ -157,13 +189,11 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                    
     %% Create a BIDS dataset with the trials to be segmented
     get_filenames = 1;
-    OutputFiles = process_ivadomed('Run', sProcess, sInputs, get_filenames);    
+    OutputFiles = process_ivadomed_create_dataset('Run', sProcess, sInputs, get_filenames);    
     
     
-    %% Instead of changing the config.json file, call ivadomed with FLAG usage
-    % to perform segmentation of the selected files 
-    
-    output = system(['ivadomed --segment -c ' configFile ' -pd ' parentPath ' -po ' ivadomedOutputFolder]);
+    %% Call ivadomed with "segment" method
+    output = system([ivadomed_call ' --segment -c ' configFile ' -pd ' parentPath ' -po ' ivadomedOutputFolder]);
     if output~=0
         bst_report('Error', sProcess, sInputs, 'Something went wrong during segmentation');
         return
@@ -175,7 +205,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         [a,b,c] = bst_fileparts(OutputFiles{iInput});
         [a,file_basename,c] = bst_fileparts(b);
 
-        % TODO - GRAB event annotation suffix (e.g. "centered") from json file
+        % Grab event annotation suffix (e.g. "centered") from json file
         segmentationMasks{iInput} = bst_fullfile(ivadomedOutputFolder, 'pred_masks', [file_basename, config_struct.loader_parameters.target_suffix{1}, '_pred.nii.gz']);
     end
     
@@ -240,29 +270,18 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         % FOR NOW WORKS ONLY WHEN ALL CHANNELS ARE ANNOTATED - NOT JUST A FEW
         mask = false(1, size(F_segmented,2));
         event_timevector = [];
-        
-        
-        
-        PARTIAL_OR_WHOLE_BRAIN_ANNOTATION = 'WHOLE'   % PARTIAL , WHOLE
-        
-        
-        
-        majority_vote = 0.01;  % this allows to allocate the percentage of channels that need to have the annotation in order to keep it
-                              % This is useful only in the case where all
-                              % of annotations on all channels - not
-                              % partial annotations - TODO - generalize to
-                              % partial annotations
+   
         
         channelsContributingToAnnotation = {};
                               
         for iSample = 1:size(F_segmented,2)
             % If majority - annotate
-            if sum(F_segmented(:, iSample))>= length(T.ChannelNames) * majority_vote
+            if sum(F_segmented(:, iSample))>= length(T.ChannelNames) * sProcess.options.majorityVote.Value{1} / 100
                 mask(iSample) = true;
                 event_timevector = [event_timevector Time(iSample)];
                 annotated_Channels_on_Sample = find(F_segmented(:,iSample));
                 
-                if strcmp(PARTIAL_OR_WHOLE_BRAIN_ANNOTATION, 'PARTIAL')
+                if strcmp(sProcess.options.annotation.Comment{1}, 'Partial')
                     channelsContributingToAnnotation = unique([channelsContributingToAnnotation  {ChannelMat.Channel(annotated_Channels_on_Sample).Name}]);
                 else
                     channelsContributingToAnnotation = [];
@@ -323,7 +342,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
             sEvent.times    = detectedEvt;
             sEvent.epochs   = ones(1, size(sEvent.times,2));
             
-            if strcmp(PARTIAL_OR_WHOLE_BRAIN_ANNOTATION, 'PARTIAL')
+            if strcmp(sProcess.options.annotation.Comment{1}, 'Partial')
                 sEvent.channels = cell(1, size(sEvent.times, 2));
                 for iEvent = 1:size(sEvent.times, 2)
                     sEvent.channels{iEvent} = channelsContributingToAnnotation;

@@ -277,7 +277,7 @@ function PlugDesc = GetSupported(SelPlug)
     
     % === DEEP LEARNING: IVADOMED ===
     PlugDesc(end+1)              = GetStruct('ivadomed');
-    PlugDesc(end).Version        = '2.7.4';
+    PlugDesc(end).Version        = 'latest';
     PlugDesc(end).Category       = 'Deep Learning';
     PlugDesc(end).AutoUpdate     = 0;
     PlugDesc(end).URLzip         = 'https://github.com/ivadomed/ivadomed/archive/refs/heads/master.zip';
@@ -285,8 +285,9 @@ function PlugDesc = GetSupported(SelPlug)
     PlugDesc(end).TestFile       = 'setup.py';
     PlugDesc(end).ReadmeFile     = 'README.md';
     PlugDesc(end).CompiledStatus = 0;
-    %PlugDesc(end).GetVersionFcn  = 'bst_getoutvar(2, @spm, ''Ver'')';
-    %PlugDesc(end).LoadedFcn      = 'spm(''defaults'',''EEG'');';
+    PlugDesc(end).InstalledFcn   = 'installIvadomed(1);';
+    PlugDesc(end).LoadedFcn      = @Configure;
+    PlugDesc(end).UninstalledFcn = 'installIvadomed(0);';
     
     % === FIELDTRIP ===
     PlugDesc(end+1)              = GetStruct('fieldtrip');
@@ -374,7 +375,17 @@ function Configure(PlugDesc)
             % Generate the NWB Schema (must be executed from the NWB folder)
             generateCore();
             % Restore current directory
-            cd(curDir);           
+            cd(curDir);   
+        case 'ivadomed'
+            curDir = pwd;
+            cd(bst_fullfile(PlugDesc.Path, PlugDesc.SubFolder));
+            % Install Ivadomed
+            output = system('pip install -e .');
+            if output~=0
+                print('failed')
+            end
+            % Restore current directory
+            cd(curDir);   
     end
 end
 
@@ -2117,6 +2128,32 @@ function LinkCatSpm(isSet)
     end
 end
 
+
+function installIvadomed(action)
+    if action == 1  % Install
+        
+%         curDir = pwd;
+%         cd(bst_fullfile(PlugDesc.Path, PlugDesc.SubFolder));
+%         % Generate the NWB Schema (must be executed from the NWB folder)
+%         generateCore();
+%         % Restore current directory
+%         cd(curDir);        
+%         output = system('ivadomed -h');
+% 
+%         output = system(['pip install -e ' bst_fullfile()])
+% 
+%         if output~=0
+%             bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+%             return
+%         end
+        disp('installing')
+
+    elseif action == 0  % Uninstall
+        
+        disp('uninstalling')
+    end
+
+end
 
 %% ===== SET PROGRESS LOGO =====
 % USAGE:  SetProgressLogo(PlugDesc/PlugName)  % Set progress bar image

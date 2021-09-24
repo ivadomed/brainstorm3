@@ -1,13 +1,13 @@
-function varargout = process_ivadomed( varargin )
-% PROCESS_IVADOMED: this function converts trials to NIFTI files in BIDS
+function varargout = process_ivadomed_create_dataset( varargin )
+% PROCESS_IVADOMED_CREATE_DATASET: this function converts trials to NIFTI files in BIDS
 % format to be used in the IVADOMED fraework for training deep learning models
 % https://ivadomed.org/en/latest/index.html
 
-% USAGE:    sProcess = process_ivadomed('GetDescription')
-%        OutputFiles = process_ivadomed('Run', sProcess, sInput)
-%        OutputFiles = process_ivadomed('Run', sProcess, sInput, return_filenames)
+% USAGE:    sProcess = process_ivadomed_create_dataset('GetDescription')
+%        OutputFiles = process_ivadomed_create_dataset('Run', sProcess, sInput)
+%        OutputFiles = process_ivadomed_create_dataset('Run', sProcess, sInput, return_filenames)
 %                     return_filenames: Flag to return the filenames of the
-%                     created
+%                     created dataset
 % @=============================================================================
 % This function is part of the Brainstorm software:
 % https://neuroimage.usc.edu/brainstorm
@@ -35,7 +35,7 @@ end
 %% ===== GET DESCRIPTION =====
 function sProcess = GetDescription() %#ok<*DEFNU>
     % Description the process
-    sProcess.Comment     = 'Ivadomed';
+    sProcess.Comment     = 'Ivadomed Create BIDS Dataset';
     sProcess.Category    = 'Custom';
     sProcess.SubGroup    = 'IvadoMed Toolbox';
     sProcess.Index       = 3112;
@@ -186,7 +186,26 @@ end
 %% ===== RUN =====
 function OutputFiles = Run(sProcess, sInputs, return_filenames)
 
- 
+    % CHECK IF IVADOMED EXISTS
+    fname = bst_fullfile(bst_get('UserPluginsDir'), 'ivadomed', 'ivadomed-master', 'ivadomed', 'main.py');
+    if ~(exist(fname, 'file') == 2)
+        
+        % Check if ivadomed can be accessed from a system call
+        % in case the user installed it outside of Brainstorm
+        output = system('ivadomed -h');
+        if output~=0
+            OutputFiles = {};
+            bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+            return
+        end
+    end
+    
+    
+    %% Close all existing figures
+    bst_memory('UnloadAll', 'Forced');
+
+    
+    %% Sampling rate to be used when creating the NIFTI files
     wanted_Fs = sProcess.options.fs.Value{1};
     
     
@@ -270,8 +289,6 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         channels_times_path = [channels_times_path '-segmentation'];
         parentPath = [parentPath '-segmentation'];
     end
-    
-    
     
         
     if isempty(sProcess.options.eventname.Value)
@@ -459,10 +476,10 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     trial   = single_info_trial.trial;
     
     
-    modality = sProcess.options.modality.Comment{sProcess.options.modality.Value};
+    %modality = sProcess.options.modality.Comment{sProcess.options.modality.Value};
     
     
-    
+    modality = 'MEG'
     
     
     
@@ -494,82 +511,82 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
         
         
         randomize_annotation_position_for_some_channels = 0;
-        
-        
-        
-        
-        
-        
-        eyes_channel_Names = {'MLT21', 'MLT31','MLT32', 'MLT41', 'MLT51', 'MLT42', 'MLT14', 'MLT25', 'MRT21', 'MRT31', 'MRT32', 'MRT41', 'MRF14', 'MRF25', 'MRT51', 'MRT42'};
-
-        if fake_partial_annotation
-        
-        
-            disp('ADDING TEST FOR PARTIAL ANNOTATION')
-            
-
-            
-
-            single_info_trial.dataMat.Events(end+1).label = 'partial_annotation';
-            single_info_trial.dataMat.Events(end).color = [0,1,0];
-            single_info_trial.dataMat.Events(end).epochs = 1;
-            single_info_trial.dataMat.Events(end).times = [sProcess.options.timewindow.Value{1}(1:2)]';
-            single_info_trial.dataMat.Events(end).reactTimes = [];
-            single_info_trial.dataMat.Events(end).select = 1;
-            single_info_trial.dataMat.Events(end).notes = {[]};
-            
-            if randomize_annotation_position_for_some_channels
-                
-                % The usage for this is to randomly change the position of
-                % 4 channels around each to random places around the head,
-                % so the model does not learn the position
-                % Besides the annotation on the events, the F matrix also
-                % has to accommodate that change
-                
-                nChannels = length(eyes_channel_Names)/2;  % The assumption here is that each cluster on each eye has the same number of channels
-                clusters = ivadomed_getNchannelsAroundCenter(nChannels, single_info_trial.ChannelMat, figures_struct(iFile).FigureObject);
-                
-                single_info_trial.dataMat.Events(end).channels = {[clusters.SelectedChannelsNames]};
-                annotated_indicesOnChannelMat = [clusters.SelectedIndicesOnChannelMat];
-                
-                eyes_channel_indicesOnChannelMat =  find(ismember({single_info_trial.ChannelMat.Channel.Name}, eyes_channel_Names));
-
-%                 hold on
-%                 plot(clusters(1).CenterCoords(1), clusters(1).CenterCoords(2),'*b')
-%                 plot(clusters(1).SelectedChannelsCoords(:,1),clusters(1).SelectedChannelsCoords(:,2),'bo')
-%                 plot(clusters(2).CenterCoords(1), clusters(2).CenterCoords(2),'*r')
-%                 plot(clusters(2).SelectedChannelsCoords(:,1),clusters(2).SelectedChannelsCoords(:,2),'ro')
-%                 hold off
-
-            else  % Annotate only the 8 channels on each eye
-                single_info_trial.dataMat.Events(end).channels = {eyes_channel_Names}; % Eyes
-            end
-            
-        end
-        
-        
-        if randomize_annotation_position_for_some_channels && ~fake_partial_annotation
-            
-            % The usage for this is to randomly change the position of
-            % 4 channels around each to random places around the head,
-            % so the model does not learn the position
-            % Besides the annotation on the events, the F matrix also
-            % has to accommodate that change
-
-            nChannels = 8;
-            clusters = ivadomed_getNchannelsAroundCenter(nChannels, single_info_trial.ChannelMat, figures_struct(iFile).FigureObject);
-            annotated_indicesOnChannelMat = [clusters.SelectedIndicesOnChannelMat];
-            eyes_channel_indicesOnChannelMat =  find(ismember({single_info_trial.ChannelMat.Channel.Name}, eyes_channel_Names));
-
-        else  % Annotate only 8 channels on each eye
-            single_info_trial.dataMat.Events(end).channels = {eyes_channel_Names}; % Eyes
-        end
-        
-        
-        
-        
-        
-        
+%         
+%         
+%         if strcmp(sProcess.options.convert.Value, 'conversion')
+%         
+%         
+%         
+%             eyes_channel_Names = {'MLT21', 'MLT31','MLT32', 'MLT41', 'MLT51', 'MLT42', 'MLT14', 'MLT25', 'MRT21', 'MRT31', 'MRT32', 'MRT41', 'MRF14', 'MRF25', 'MRT51', 'MRT42'};
+% 
+%             if fake_partial_annotation
+% 
+% 
+%                 disp('ADDING TEST FOR PARTIAL ANNOTATION')
+% 
+% 
+% 
+% 
+%                 single_info_trial.dataMat.Events(end+1).label = 'partial_annotation';
+%                 single_info_trial.dataMat.Events(end).color = [0,1,0];
+%                 single_info_trial.dataMat.Events(end).epochs = 1;
+%                 single_info_trial.dataMat.Events(end).times = [sProcess.options.timewindow.Value{1}(1:2)]';
+%                 single_info_trial.dataMat.Events(end).reactTimes = [];
+%                 single_info_trial.dataMat.Events(end).select = 1;
+%                 single_info_trial.dataMat.Events(end).notes = {[]};
+% 
+%                 if randomize_annotation_position_for_some_channels
+% 
+%                     % The usage for this is to randomly change the position of
+%                     % 4 channels around each to random places around the head,
+%                     % so the model does not learn the position
+%                     % Besides the annotation on the events, the F matrix also
+%                     % has to accommodate that change
+% 
+%                     nChannels = length(eyes_channel_Names)/2;  % The assumption here is that each cluster on each eye has the same number of channels
+%                     clusters = ivadomed_getNchannelsAroundCenter(nChannels, single_info_trial.ChannelMat, figures_struct(iFile).FigureObject);
+% 
+%                     single_info_trial.dataMat.Events(end).channels = {[clusters.SelectedChannelsNames]};
+%                     annotated_indicesOnChannelMat = [clusters.SelectedIndicesOnChannelMat];
+% 
+%                     eyes_channel_indicesOnChannelMat =  find(ismember({single_info_trial.ChannelMat.Channel.Name}, eyes_channel_Names));
+% 
+%     %                 hold on
+%     %                 plot(clusters(1).CenterCoords(1), clusters(1).CenterCoords(2),'*b')
+%     %                 plot(clusters(1).SelectedChannelsCoords(:,1),clusters(1).SelectedChannelsCoords(:,2),'bo')
+%     %                 plot(clusters(2).CenterCoords(1), clusters(2).CenterCoords(2),'*r')
+%     %                 plot(clusters(2).SelectedChannelsCoords(:,1),clusters(2).SelectedChannelsCoords(:,2),'ro')
+%     %                 hold off
+% 
+%                 else  % Annotate only the 8 channels on each eye
+%                     single_info_trial.dataMat.Events(end).channels = {eyes_channel_Names}; % Eyes
+%                 end
+% 
+%             end
+% 
+% 
+%             if randomize_annotation_position_for_some_channels && ~fake_partial_annotation
+% 
+%                 % The usage for this is to randomly change the position of
+%                 % 4 channels around each to random places around the head,
+%                 % so the model does not learn the position
+%                 % Besides the annotation on the events, the F matrix also
+%                 % has to accommodate that change
+% 
+%                 nChannels = 8;
+%                 clusters = ivadomed_getNchannelsAroundCenter(nChannels, single_info_trial.ChannelMat, figures_struct(iFile).FigureObject);
+%                 annotated_indicesOnChannelMat = [clusters.SelectedIndicesOnChannelMat];
+%                 eyes_channel_indicesOnChannelMat =  find(ismember({single_info_trial.ChannelMat.Channel.Name}, eyes_channel_Names));
+% 
+%             else  % Annotate only 8 channels on each eye
+%                 single_info_trial.dataMat.Events(end).channels = {eyes_channel_Names}; % Eyes
+%             end
+%         
+%         end
+%         
+%         
+%         
+%         
         
         
         
