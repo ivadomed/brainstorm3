@@ -112,19 +112,28 @@ end
 function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>   
     
     %% Check if IVADOMED is installed/accessible
+    % We'll check for two options:
+    % 1. Ivadomed is installed through the plugin manager
+    % 2. Ivadomed is accessible as a system call but not as a plugin
     
+    PlugDesc = bst_plugin('GetInstalled','ivadomed');
     
+    if isempty(PlugDesc)
+        isLoaded = 0;
+    else
+        isLoaded = PlugDesc.isLoaded;
+    end
+
+    fname = bst_fullfile(PlugDesc.Path, 'ivadomed-master', 'ivadomed', 'main.py');
     
-    
-    %% CHECK IVADOMED EXISTS
-    fname = bst_fullfile(bst_get('UserPluginsDir'), 'ivadomed', 'ivadomed-master', 'ivadomed', 'main.py');
-    if ~(exist(fname, 'file') == 2)
+    if ~isLoaded
         
         % Check if ivadomed can be accessed from a system call
         % in case the user installed it outside of Brainstorm
         output = system('ivadomed -h');
         if output~=0
-            bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+            bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Check if it is installed as a plugin or if you are running Matlab through an anaconda environment that has Ivadomed installed');
+            OutputFiles = {};
             return
         else
             ivadomed_call = 'ivadomed';

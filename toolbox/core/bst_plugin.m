@@ -382,7 +382,8 @@ function Configure(PlugDesc)
             % Install Ivadomed
             output = system('pip install -e .');
             if output~=0
-                print('failed')
+                errMsg = 'Failed to install Ivadomed';
+                bst_error(['Installation error:' 10 10 errMsg 10], 'Plugin manager', 0);
             end
             % Restore current directory
             cd(curDir);   
