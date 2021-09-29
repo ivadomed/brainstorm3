@@ -283,7 +283,6 @@ function PlugDesc = GetSupported(SelPlug)
     PlugDesc(end).URLzip         = 'https://github.com/ivadomed/ivadomed/archive/refs/heads/master.zip';
     PlugDesc(end).URLinfo        = 'https://ivadomed.org/en/latest/index.html';
     PlugDesc(end).TestFile       = 'setup.py';
-    PlugDesc(end).ReadmeFile     = 'README.md';
     PlugDesc(end).CompiledStatus = 0;
     PlugDesc(end).InstalledFcn   = 'installIvadomed(1);';
     PlugDesc(end).LoadedFcn      = @Configure;
@@ -387,6 +386,9 @@ function Configure(PlugDesc)
             end
             % Restore current directory
             cd(curDir);   
+            % Disable Ivadomed BIDS validator
+            fname_bids_dataframe_python = bst_fullfile(PlugDesc.Path, PlugDesc.SubFolder, 'ivadomed', 'loader', 'bids_dataframe.py');
+            ivadomed_deactivate_bids_validator(fname_bids_dataframe_python)
     end
 end
 
