@@ -32,7 +32,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.Comment     = 'Ivadomed Segmentation';
     sProcess.Category    = 'Custom';
     sProcess.SubGroup    = 'IvadoMed Toolbox';
-    sProcess.Index       = 3113;
+    sProcess.Index       = 3114;
     sProcess.Description = 'https://ivadomed.org/en/latest/index.html';
     % Definition of the input accepted by this process
     sProcess.InputTypes  = {'raw', 'data'};
@@ -43,27 +43,27 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.eventname.Comment = 'Event name: ';
     sProcess.options.eventname.Type    = 'text';
     sProcess.options.eventname.Value   = 'segmented';
-    % Model selection options
     SelectOptions = {...
-        '', ...                               % Filename
-        '', ...                               % FileFormat
-        'open', ...                           % Dialog type: {open,save}
-        'Import events...', ...               % Window title
-        'ImportData', ...                     % LastUsedDir: {ImportData,ImportChannel,ImportAnat,ExportChannel,ExportData,ExportAnat,ExportProtocol,ExportImage,ExportScript}
-        'single', ...                         % Selection mode: {single,multiple}
-        'files', ...                          % Selection mode: {files,dirs,files_and_dirs}
-        bst_get('FileFilters', 'model'), ... % Get all the available file formats
-        'EventsIn'};                          % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn
+        '', ...                            % Filename
+        '', ...                            % FileFormat
+        'open', ...                        % Dialog type: {open,save}
+        'Output model folder...', ...     % Window title
+        'ImportAnat', ...                  % LastUsedDir: {ImportData,ImportChannel,ImportAnat,ExportChannel,ExportData,ExportAnat,ExportProtocol,ExportImage,ExportScript}
+        'single', ...                    % Selection mode: {single,multiple}
+        'dirs', ...                        % Selection mode: {files,dirs,files_and_dirs}
+        {{'.folder'}, 'Model output folder', 'IVADOMED'}, ... % Available file formats
+        []};                               % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,AnatIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn}
+    
     % Option: Event file
-    sProcess.options.evtfile.Comment = 'Deep learning model file:';
-    sProcess.options.evtfile.Type    = 'filename';
-    sProcess.options.evtfile.Value   = SelectOptions;
+    sProcess.options.modelfolder.Comment = 'Deep learning model output folder:';
+    sProcess.options.modelfolder.Type    = 'filename';
+    sProcess.options.modelfolder.Value   = SelectOptions;
     % Needed Fs
     sProcess.options.fs.Comment = 'Sampling rate that was used  while training the model <I><FONT color="#FF0000">(AUTOMATE THIS)</FONT></I>';
     sProcess.options.fs.Type    = 'value';
     sProcess.options.fs.Value   = {100, 'Hz', 0};
     % GPU ID to run inference on
-    sProcess.options.gpu.Comment = 'GPU ID to run inference on <I><FONT color="#FF0000">(AUTOMATE THIS)</FONT></I>';
+    sProcess.options.gpu.Comment = 'GPU ID to run inference on:';
     sProcess.options.gpu.Type    = 'value';
     sProcess.options.gpu.Value   = {0, [], 0};
     % Conversion of both trials and their derivatives
@@ -72,22 +72,28 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.convert.Hidden = 1;
     % BIDS subject selection
     % Method: BIDS subject selection
-    sProcess.options.annotationLabel.Comment = '<I><FONT color="#FF0000">Whole Head annotation (all channels) or partial (annotate a few channels)</FONT></I>';
+    sProcess.options.annotationLabel.Comment = '<I><FONT color="#FF0000">Whole Head annotation (all channels) or partial (annotate specific channels)</FONT></I>';
     sProcess.options.annotationLabel.Type    = 'label';
     sProcess.options.annotation.Comment = {'Whole', 'Partial'};
     sProcess.options.annotation.Type    = 'radio';
     sProcess.options.annotation.Value   = 1;
     % BIDS subject selection
-    sProcess.options.bidsFolders.Comment = {'Normal', 'Separate runs/sessions as different subjects'};
+    sProcess.options.bidsFolders.Comment = {'Normal', 'Separate runs/sessions as different subjects', 'Separate each trial as different subjects'};
     sProcess.options.bidsFolders.Type    = 'radio';
     sProcess.options.bidsFolders.Value   = 1;
     sProcess.options.bidsFolders.Hidden = 1;
     % GPU ID to run inference on - % this allows to allocate the percentage
     % of channels that need to have the annotation in order to keep the
     % annotation
-    sProcess.options.majorityVote.Comment = 'Majority Vote Percentage [0,100] <I><FONT color="#FF0000">OF TOTAL MEG/EEG CHANNELS</FONT></I>';
+    sProcess.options.majorityVote.Comment = 'Majority Vote Percentage of MEG/EEG channels [0,100]</FONT></I>';
     sProcess.options.majorityVote.Type    = 'value';
-    sProcess.options.majorityVote.Value   = {50, [], 0};
+    sProcess.options.majorityVote.Value   = {50, [], []};
+    % Modality Selection
+    sProcess.options.label11.Comment = '<BR><B>Modality selection:</B>';
+    sProcess.options.label11.Type    = 'label';
+    sProcess.options.modality.Comment = {'MEG', 'EEG', 'MEG+EEG', 'fNIRS'};
+    sProcess.options.modality.Type    = 'radio';
+    sProcess.options.modality.Value   = 1;
     % Parallel processing
     sProcess.options.paral.Comment = 'Parallel processing';
     sProcess.options.paral.Type    = 'checkbox';
@@ -147,26 +153,35 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     %% ===== GET OPTIONS =====
     % Event name
     evtName = strtrim(sProcess.options.eventname.Value);
-    modelFile = sProcess.options.evtfile.Value{1};
+    modelFolder = sProcess.options.modelfolder.Value{1};
     
-    if isempty(evtName) || isempty(modelFile)
+    if isempty(evtName) || isempty(modelFolder)
         bst_report('Error', sProcess, [], 'Event name and trained model must be specified.');
         OutputFiles = {};
         return;
     end
     
+    %% Important files/folders
+    ivadomedOutputFolder = modelFolder;  % Output of the trained model
+    
+    protocol = bst_get('ProtocolInfo');
+    parentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
+                       'IvadomedNiftiFiles', ...
+                       [protocol.Comment '-segmentation']);
+    channelsparentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
+                       'IvadomedNiftiFiles', ...
+                       [protocol.Comment '-meta-segmentation']);
+    
     %% CHANGE THE CONFIG FILE TO RUN LOCALLY
     
     % Grab the config.json file that was used and assign the gpu that the
     % user selected
-    
-    ivadomedOutputFolder = bst_fileparts(bst_fileparts(modelFile));
-    configFile = bst_fullfile(ivadomedOutputFolder, 'config_file.json');
+    configFile = bst_fullfile(modelFolder, 'config_file.json');
     
     fid = fopen(configFile);
     raw = fread(fid,inf);
     str = char(raw');
-    fclose(fid);
+    fclose(fid);          
     
     %Substitute null values with nan - This is needed for cause jsonencode
     %changes null values to [] and ultimately ivadomed throws errors
@@ -185,17 +200,32 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     fclose(fid);
 
     
-    %% Important files/folders
-    ivadomedOutputFolder = bst_fileparts(bst_fileparts(modelFile));  % Output of the trained model
+%     %% If the input is a raw file, segment the it into "trials" with a sliding window
+%     % The size of the window needs to be the same as the trials used to
+%     % train the model
+%     % Consider adding a parameter for the windows to be overlapping
+%     
+%     [sStudy, iStudy, iData] = bst_get('DataFile', sInputs(1).FileName);
+%     
+%     % Is it a "link to raw file" or not
+%     isRaw = strcmpi(sStudy.Data(iData).DataType, 'raw');
+%     % Get subject index
+%     [sSubject, iSubject] = bst_get('Subject', sStudy.BrainStormSubject);
+%     % Progress bar
+%     bst_progress('start', 'Import raw file', 'Processing file header...');
+%     % Read file descriptor
+%     DataMat = in_bst_data(sInputs(1).FileName);
+%     % Read channel file
+%     ChannelFile = bst_get('ChannelFileForStudy', sInputs(1).FileName);
+%     ChannelMat = in_bst_channel(ChannelFile);
+%     % Get sFile structure
+%     if isRaw
+%         sFile = DataMat.F;
+%     else
+%         sFile = in_fopen(sInputs(1).FileName, 'BST-DATA');
+%     end
     
-    protocol = bst_get('ProtocolInfo');
-    parentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
-                       'IvadomedNiftiFiles', ...
-                       [protocol.Comment '-segmentation']);
-    channelsparentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
-                       'IvadomedNiftiFiles', ...
-                       [protocol.Comment '-meta-segmentation']);
-                   
+    
     %% Create a BIDS dataset with the trials to be segmented
     get_filenames = 1;
     OutputFiles = process_ivadomed_create_dataset('Run', sProcess, sInputs, get_filenames);    
@@ -261,8 +291,11 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         % Load channel file
         ChannelMat = in_bst_channel(sChannel.FileName);
         
+        % Protocol info
+        protocol = bst_get('ProtocolInfo');
+        
         % Read the channel pixel coordinates file
-        channelCoordinatesFile = bst_fullfile(bst_fileparts(strrep(OutputFiles{iInput}, 'brainstorm-segmentation', 'brainstorm-meta-segmentation')), 'channels.csv');
+        channelCoordinatesFile = bst_fullfile(bst_fileparts(strrep(OutputFiles{iInput}, [protocol.Comment '-segmentation'], [protocol.Comment '-meta-segmentation'])), 'channels.csv');
         T = readtable(channelCoordinatesFile);
         
         for iChannel = 1:length(T.ChannelNames)
