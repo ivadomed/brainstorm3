@@ -84,12 +84,32 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.jitter_help.Comment = '<I><FONT color="#777777">This is used to crop the edges of each trial so the trained model doesn"t learn the position of the event</FONT></I>';
     sProcess.options.jitter_help.Type    = 'label';
     
+    % Data augmentation parameters
+    sProcess.options.label15.Comment = '<BR><B>Data augmentation parameters (signals level):</B>';
+    sProcess.options.label15.Type    = 'label';
+    % Use gaussian soft annotation
+    sProcess.options.channelDropOut.Comment = 'Channels drop-out';
+    sProcess.options.channelDropOut.Type    = 'value';
+    sProcess.options.channelDropOut.Value   = {[], 'channels', 0};
+    sProcess.options.channelDropOut_help.Comment = '<I><FONT color="#777777">Remove n channels randomly up to the selected value</FONT></I>';
+    sProcess.options.channelDropOut_help.Type = 'label';
+    
+    % Annotation Options
+    sProcess.options.label14.Comment = '<BR><B>Annotation Parameters:</B>';
+    sProcess.options.label14.Type    = 'label';
+    % Use gaussian soft annotation
+    sProcess.options.gaussian_annot.Comment = 'Gaussian annotation';
+    sProcess.options.gaussian_annot.Type    = 'checkbox';
+    sProcess.options.gaussian_annot.Value   = 0;
+    sProcess.options.gaussian_annot_help.Comment = '<I><FONT color="#777777">The annotation within the annotation window will be a gaussian function</FONT></I>';
+    sProcess.options.gaussian_annot_help.Type = 'label';
+    
     % Needed threshold for soft annotation
     sProcess.options.annotthresh.Comment = 'Soft annotation threshold (0,1)';
     sProcess.options.annotthresh.Type    = 'value';
     sProcess.options.annotthresh.Value   = {[], [], 1};
     % Annotation threshold comment
-    sProcess.options.annotthresh_help.Comment = '<I><FONT color="#777777">If selected, the annotation will have a soft threshold. Leave empty for hard annotation at 0.5</FONT></I>';
+    sProcess.options.annotthresh_help.Comment = '<I><FONT color="#777777">If selected, the annotation will have a soft threshold. Leave empty for hard annotation at 0.5 during inference</FONT></I>';
     sProcess.options.annotthresh_help.Type    = 'label';
     % Parallel processing
     sProcess.options.paral.Comment = 'Parallel processing';
@@ -169,7 +189,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
             Time = in_bst(sInputs(iInput).FileName, 'Time');
             
             % Gather all runs that are used -  THIS IS FOR BIDS DATASETS
-            % ONLY
+            % ONLY - TODO
             splits = split(sInputs(iInput).Condition, '_');
             run = splits(contains(splits, 'run')); splitsRun = split(run,'-');
             iRun = str2double(splitsRun{2});
@@ -194,11 +214,11 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                     bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
                 else
 %                     % TODO - THIS IS WRONG - IT SHOULD BE REJECTED IF ALL ANNOTATIONS ARE OUT OF BOUNDS, NOT JUST THE FIRST AND LAST
-%                     if Time(1) > sProcess.options.timewindow.Value{1}(1) + events(index).times(1) || Time(end) < events(index).times(end) - sProcess.options.timewindow.Value{1}(2)
-%                         inputs_to_remove(iInput) = true;
-%                         bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
-%                     end
-                    continue
+                    if Time(1) > sProcess.options.timewindow.Value{1}(1) + events(index).times(1) || Time(end) < events(index).times(end) + sProcess.options.timewindow.Value{1}(2)
+                        inputs_to_remove(iInput) = true;
+                        bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
+                    end
+%                     continue
 
                 end
             end
@@ -210,6 +230,12 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         runs = unique(runs);
     end
     
+    
+    if isempty(sInputs)
+        bst_report('Error', sProcess, sInputs, 'No inputs selected');
+        OutputFiles = {};
+        return
+    end
     
     %% Gather F and filenames for all files here - This shouldn't create a memory issue
     % Reason why all of them are imported here is that in_bst doesn't like
@@ -311,6 +337,8 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         if ~isnan(wanted_Fs) && current_Fs~=wanted_Fs
             %[x, time_out] = process_resample('Compute', x, time_in, NewRate)
             [info_trials(iInput).dataMat.F, info_trials(iInput).dataMat.Time] = process_resample('Compute', info_trials(iInput).dataMat.F, info_trials(iInput).dataMat.Time, wanted_Fs);
+        else
+            wanted_Fs = current_Fs;  % This is done here so it can be saved on the saved config file, and ultimately this sampling rate be used on the segementation function
         end
 
           % Get output study
@@ -386,9 +414,12 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     % Keep only unique entries to be used in the Ivadomed config.json file
     % This is for the entries on "contrast_params": {"training_validation"}
     % and "contrast_params": {"testing"}
-    txt = split(txt, ', '); txt = unique(txt); contrast_params_txt = txt;
+    txt = split(txt, ', '); 
+    txt = unique(txt); 
+    contrast_params_txt = txt;
     txt = strcat(txt);
-    txt = join(txt, ', '); txt = txt{1};
+    txt = join(txt, ', '); 
+    txt = txt{1};
     
     
     disp(['Entries for "contrast_params": {training_validation} {testing}: ' txt])
@@ -486,7 +517,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     [temp1,folder_output,temp2] = bst_fileparts(parentPath);
 
     % Command to run on the terminal for copying files
-    disp(['scp -rp ' parentPath ' u111358@rosenberg.neuro.polymtl.ca:/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/multiple_spikes_5_seconds//data_' folder_output]);
+    disp(['scp -rp ' parentPath ' u111358@rosenberg.neuro.polymtl.ca:/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/distant_spikes_2_seconds_gaussian_annotation/data_' folder_output '_gaussian_annotation']);
     
 end
 
@@ -591,25 +622,12 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 %         
         
         
-        
-        
-        
-        
-        
-        
-        
-        %%
-    
-    
-    
-    
-    
     
     %% ADD A JITTER
     % We want to avoid the model learning the positioning of the event so
     % we crop the time dimension on both sides with a jitter
     
-    if strcmp(sProcess.options.convert.Value, 'conversion')  % Only during training add a jitter - during (deep learning) segmentation the trial is not truncated
+    if strcmp(sProcess.options.convert.Value, 'conversion') && sProcess.options.jitter.Value{1}~=0  % Only during training add a jitter - during (deep learning) segmentation the trial is not truncated
         current_Fs = round(1/diff(single_info_trial.dataMat.Time(1:2)));
         discardElementsBeginning = round(randi(sProcess.options.jitter.Value{1}*1000)/1000 * current_Fs);
         discardElementsEnd = round(randi(sProcess.options.jitter.Value{1}*1000)/1000 * current_Fs);
@@ -629,7 +647,8 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
         end
     end
     
-%     %% CHANGE THE COLORMAP DISPLAYED ON THE BOTTOM LEFT
+    
+    %% CHANGE THE COLORMAP DISPLAYED ON THE BOTTOM LEFT
 %     % Get colormap type
 %     ColormapInfo = getappdata(GlobalData.DataSet.Figure.hFigure, 'Colormap');
 %     
@@ -662,14 +681,23 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                single_info_trial.dataMat.ChannelFlag(iChannel)==1
 
                    %% TODO - ACCOMMODATE MORE HERE - fNIRS?
-              nElectrodes = nElectrodes + 1;
-              selectedChannels(end + 1) = iChannel;
+               nElectrodes = nElectrodes + 1;
+               selectedChannels(end + 1) = iChannel;
            end
         end
 
+        %% Drop out channels if requested
+        if ~isempty(sProcess.options.channelDropOut.Value{1}) && sProcess.options.channelDropOut.Value{1}~=0
+            nChannelsToDropout = randi(sProcess.options.channelDropOut.Value{1});
+            iChannelsToDropout = selectedChannels(randi(length(selectedChannels), nChannelsToDropout,1));
+            
+            single_info_trial.dataMat.ChannelFlag(iChannelsToDropout) = -1;
+            selectedChannels = selectedChannels(~ismember(selectedChannels,iChannelsToDropout));
+        end
+        
         %% Gather the topography slices to a single 3d matrix
         % Here the time dimension is the 3rd dimension
-        [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 0);
+        [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 0, sProcess);
     %     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
 
         %% Get the output filename
@@ -727,11 +755,20 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 
                                 % If no specific channels are annotated, annotate the entire slice
                                 if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent})
-                                    F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation(F_derivative, [], iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
                                 else
                                     iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
-                                    F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
                                     selectedChannels = iAnnotation_channels;
+                                    
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
                                 end
                             end
                         else
@@ -744,11 +781,20 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 
                                 % If no specific channels are annotated, annotate the entire slice
                                 if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent})
-                                    F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation(F_derivative, [], iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
                                 else
                                     iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
-                                    F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
                                     selectedChannels = iAnnotation_channels;
+                                    
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
                                 end
                             end
                         end
@@ -766,24 +812,29 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
             end
 
             figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct, modality{iModality});
-            [NIFTI_derivative, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F_derivative, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 1);
+            [NIFTI_derivative, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F_derivative, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 1, sProcess);
             figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
 
 
             % Set the values to 0 and 1 for the annotations
             % Hard threshold
-            NIFTI_derivative = NIFTI_derivative/max(max(max(NIFTI_derivative)));
+            NIFTI_derivative = double(NIFTI_derivative)/max(max(max(double(NIFTI_derivative))));
 
-            % If no value is selected for soft thesholding the annotation, apply a
-            % hard annotation at 0.5
-            if isempty(sProcess.options.annotthresh.Value{1})
-                NIFTI_derivative(NIFTI_derivative<0.5) = 0;
-                NIFTI_derivative(NIFTI_derivative>=0.5) = 1;
-            else
-                % In case of soft-annotation thresholding, assign everything below
-                % the threshold to 0 - BUT KEEP THE VALUES AS THEY ARE ABOVE THE
-                % THRESHOLD
-                NIFTI_derivative(NIFTI_derivative<sProcess.options.annotthresh.Value{1}) = 0;
+            
+            % Apply the soft annotation threshold only if the gaussian
+            % annotation is not selected
+            if ~sProcess.options.gaussian_annot.Value
+                % If no value is selected for soft thesholding the annotation, apply a
+                % hard annotation at 0.5
+                if isempty(sProcess.options.annotthresh.Value{1})
+                    NIFTI_derivative(NIFTI_derivative<0.5) = 0;
+                    NIFTI_derivative(NIFTI_derivative>=0.5) = 1;
+                else
+                    % In case of soft-annotation thresholding, assign everything below
+                    % the threshold to 0 - BUT KEEP THE VALUES AS THEY ARE ABOVE THE
+                    % THRESHOLD
+                    NIFTI_derivative(NIFTI_derivative<sProcess.options.annotthresh.Value{1}) = 0;
+                end
             end
 
             % Annotate derivative
@@ -859,7 +910,7 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
 end
 
 
-function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time, ChannelMat, selectedChannels, iFile, figures_struct, isDerivative)
+function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time, ChannelMat, selectedChannels, iFile, figures_struct, isDerivative, sProcess)
     % global GlobalData
 
 %      %  %  %  TODO - CONSIDER MAKING ALL VALUES POSITIVE AND CHANGE THE
@@ -944,9 +995,11 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
             img_gray(img_gray<170)=0;
         elseif isDerivative
             
-            threshold = 145;  % For annotating a single channel assigned it to 133
-            img_gray(img_gray<threshold)=0;
-            img_gray(img_gray>=threshold)=1;
+            if ~sProcess.options.gaussian_annot.Value
+                threshold = 145;  % For annotating a single channel assigned it to 133
+                img_gray(img_gray<threshold)=0;
+                img_gray(img_gray>=threshold)=1;
+            end
         end
         
         NIFTI(:,:,iTime) = img_gray;
@@ -1161,7 +1214,7 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     str = char(raw');
     fclose(fid);          
     
-    %Substitute null values with nan - This is needed for cause jsonencode
+    %Substitute null values with nan - This is needed cause jsonencode
     %changes null values to [] and ultimately ivadomed throws errors
     str = strrep(str, 'null', 'NaN');
     
@@ -1170,8 +1223,8 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     [temp1,folder_output,temp2] = bst_fileparts(parentPath);
 
     % Change input-output folders
-    config_struct.loader_parameters.path_data = ['/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/multiple_spikes_5_seconds/data_' folder_output];
-    config_struct.path_output = ['/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/multiple_spikes_5_seconds/output_' folder_output];
+    config_struct.loader_parameters.path_data = ['/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/distant_spikes_2_seconds_gaussian_annotation/data_' folder_output '_gaussian_annotation'];
+    config_struct.path_output = ['/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/distant_spikes_2_seconds_gaussian_annotation/output_' folder_output '_gaussian_annotation'];
     
     % Change the contrast_params{training_validation, testing}
     contrast_params_cell = cellfun(@(x) strrep(x,'"',''),contrast_params_txt, 'UniformOutput',false);
@@ -1179,19 +1232,17 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     config_struct.loader_parameters.contrast_params.testing = contrast_params_cell;
     
     config_struct.model_name = [modality '_model'];
-    config_struct.loader_parameters.target_suffix = ['_' annotation];
+    config_struct.loader_parameters.target_suffix = {['_' annotation]};
     
-    % Hack to assign a list on gpu_id - a single value saves it as an int
-    % when it's encoded to json and ivadomed complains
-    config_struct.gpu_ids = [0,0];
-    
+    config_struct.gpu_ids = {0};
     
     % Add the Brainstorm parameters on the json file
     config_struct.brainstorm = struct;
     config_struct.brainstorm.modality = sProcess.options.modality.Comment{sProcess.options.modality.Value};
     config_struct.brainstorm.event_for_ground_truth = sProcess.options.eventname.Value;
+    config_struct.brainstorm.channel_drop_out = sProcess.options.channelDropOut.Value{1};
     config_struct.brainstorm.annotations_time_window = sProcess.options.timewindow.Value{1};
-    config_struct.brainstorm.resampling = sProcess.options.fs.Value{1};
+    config_struct.brainstorm.fs = sProcess.options.fs.Value{1};
     config_struct.brainstorm.jitter = sProcess.options.jitter.Value{1};
     config_struct.brainstorm.soft_annotation_threshold = sProcess.options.annotthresh.Value{1};
     config_struct.brainstorm.bids_folder_creation_mode = sProcess.options.bidsFolders.Comment{sProcess.options.bidsFolders.Value};
@@ -1211,3 +1262,30 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     fclose(fid);
     
 end
+
+
+
+function F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, iAnnotation_time_edges)
+    % This function returns the derivatives with a gaussian annotation.
+    % instead of a hard 0,1 annotation.
+    % Gaussian annotations can be used for soft training
+    % The config file in IVADOMED needs to be modified to make use of these
+    % annotations!
+
+    N = iAnnotation_time_edges(2)-iAnnotation_time_edges(1)+1;
+
+    w = gausswin(N,3)';
+    
+    single_channel_gaussian_annotation = zeros(1, size(F_derivative,2));
+    single_channel_gaussian_annotation(iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = w;
+    
+    
+    % Now insert it on a signal 
+    if isempty(iAnnotation_channels)
+        F_derivative = repmat(single_channel_gaussian_annotation, size(F_derivative,1), 1);
+    else
+        F_derivative = repmat(single_channel_gaussian_annotation, length(iAnnotation_channels), 1);
+    end
+
+end
+

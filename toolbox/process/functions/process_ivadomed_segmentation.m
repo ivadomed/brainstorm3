@@ -39,10 +39,32 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.OutputTypes = {'raw', 'data'};
     sProcess.nInputs     = 1;
     sProcess.nMinFiles   = 1;
-    % Event name
-    sProcess.options.eventname.Comment = 'Event name: ';
-    sProcess.options.eventname.Type    = 'text';
-    sProcess.options.eventname.Value   = 'segmented';
+    
+    
+    sProcess.options.label1.Comment = '<B>Link to raw files options<I><FONT color="#777777">  (Ignore for trial inputs)</FONT></I></B>';
+    sProcess.options.label1.Type    = 'label';
+    % Recordings time window
+    sProcess.options.timewindow.Comment = 'Recordings Time window:';
+    sProcess.options.timewindow.Type    = 'timewindow';
+    sProcess.options.timewindow.Value   = [];
+    % Sliding window 
+    sProcess.options.slidingWindowDuration.Comment = 'Sliding window duration';
+    sProcess.options.slidingWindowDuration.Type    = 'value';
+    sProcess.options.slidingWindowDuration.Value   = {2, 'ms', 0}; % TODO - CONSIDER SAVING THE TRIAL LENGTH ON THE CONFIG FILE
+    % Sliding window 
+    sProcess.options.slidingWindowOverlap.Comment = 'Sliding windows overlap';
+    sProcess.options.slidingWindowOverlap.Type    = 'value';
+    sProcess.options.slidingWindowOverlap.Value   = {10, '%', 0};
+    % FILTERING OPTIONS
+    % === Low bound
+    sProcess.options.highpass.Comment = 'Lower cutoff frequency (0=disable):';
+    sProcess.options.highpass.Type    = 'value';
+    sProcess.options.highpass.Value   = {0.5,'Hz ',3};
+    % === High bound
+    sProcess.options.lowpass.Comment = 'Upper cutoff frequency (0=disable):';
+    sProcess.options.lowpass.Type    = 'value';
+    sProcess.options.lowpass.Value   = {70,'Hz ',3};
+    
     SelectOptions = {...
         '', ...                            % Filename
         '', ...                            % FileFormat
@@ -54,14 +76,17 @@ function sProcess = GetDescription() %#ok<DEFNU>
         {{'.folder'}, 'Model output folder', 'IVADOMED'}, ... % Available file formats
         []};                               % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,AnatIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn}
     
-    % Option: Event file
+    % Deep learning model
+    sProcess.options.label2.Comment = '<B>Ivadomed trained model</B>';
+    sProcess.options.label2.Type    = 'label';
+    % Option: Model folder
     sProcess.options.modelfolder.Comment = 'Deep learning model output folder:';
     sProcess.options.modelfolder.Type    = 'filename';
     sProcess.options.modelfolder.Value   = SelectOptions;
-    % Needed Fs
-    sProcess.options.fs.Comment = 'Sampling rate that was used  while training the model <I><FONT color="#FF0000">(AUTOMATE THIS)</FONT></I>';
-    sProcess.options.fs.Type    = 'value';
-    sProcess.options.fs.Value   = {100, 'Hz', 0};
+    % Newly created Event name
+    sProcess.options.eventname.Comment = 'Label for annotated event: ';
+    sProcess.options.eventname.Type    = 'text';
+    sProcess.options.eventname.Value   = 'segmented';
     % GPU ID to run inference on
     sProcess.options.gpu.Comment = 'GPU ID to run inference on:';
     sProcess.options.gpu.Type    = 'value';
@@ -77,23 +102,12 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.annotation.Comment = {'Whole', 'Partial'};
     sProcess.options.annotation.Type    = 'radio';
     sProcess.options.annotation.Value   = 1;
-    % BIDS subject selection
-    sProcess.options.bidsFolders.Comment = {'Normal', 'Separate runs/sessions as different subjects', 'Separate each trial as different subjects'};
-    sProcess.options.bidsFolders.Type    = 'radio';
-    sProcess.options.bidsFolders.Value   = 1;
-    sProcess.options.bidsFolders.Hidden = 1;
     % GPU ID to run inference on - % this allows to allocate the percentage
     % of channels that need to have the annotation in order to keep the
     % annotation
     sProcess.options.majorityVote.Comment = 'Majority Vote Percentage of MEG/EEG channels [0,100]</FONT></I>';
     sProcess.options.majorityVote.Type    = 'value';
     sProcess.options.majorityVote.Value   = {50, [], []};
-    % Modality Selection
-    sProcess.options.label11.Comment = '<BR><B>Modality selection:</B>';
-    sProcess.options.label11.Type    = 'label';
-    sProcess.options.modality.Comment = {'MEG', 'EEG', 'MEG+EEG', 'fNIRS'};
-    sProcess.options.modality.Type    = 'radio';
-    sProcess.options.modality.Value   = 1;
     % Parallel processing
     sProcess.options.paral.Comment = 'Parallel processing';
     sProcess.options.paral.Type    = 'checkbox';
@@ -200,47 +214,144 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     fclose(fid);
 
     
-%     %% If the input is a raw file, segment the it into "trials" with a sliding window
-%     % The size of the window needs to be the same as the trials used to
-%     % train the model
-%     % Consider adding a parameter for the windows to be overlapping
-%     
-%     [sStudy, iStudy, iData] = bst_get('DataFile', sInputs(1).FileName);
-%     
-%     % Is it a "link to raw file" or not
-%     isRaw = strcmpi(sStudy.Data(iData).DataType, 'raw');
-%     % Get subject index
-%     [sSubject, iSubject] = bst_get('Subject', sStudy.BrainStormSubject);
-%     % Progress bar
-%     bst_progress('start', 'Import raw file', 'Processing file header...');
-%     % Read file descriptor
-%     DataMat = in_bst_data(sInputs(1).FileName);
-%     % Read channel file
-%     ChannelFile = bst_get('ChannelFileForStudy', sInputs(1).FileName);
-%     ChannelMat = in_bst_channel(ChannelFile);
-%     % Get sFile structure
-%     if isRaw
-%         sFile = DataMat.F;
-%     else
-%         sFile = in_fopen(sInputs(1).FileName, 'BST-DATA');
-%     end
+    %% Assign some values from the config file
+    sProcess.options.fs.Value             = {config_struct.brainstorm.fs, 'Hz', 0};
+    sProcess.options.modality.Comment     = {'MEG', 'EEG', 'MEG+EEG', 'fNIRS'}; % Make sure that the order of the modalities doesn't change between this function and process_ivadomed_create_dataset.m
+    sProcess.options.modality.Value       = find(ismember(sProcess.options.modality.Comment, config_struct.brainstorm.modality));  
+    sProcess.options.bidsFolders.Comment  = {'Normal', 'Separate runs/sessions as different subjects', 'Separate each trial as different subjects'}; % Same
+    sProcess.options.bidsFolders.Value    = find(ismember(sProcess.options.bidsFolders.Comment, config_struct.brainstorm.bids_folder_creation_mode));  
+    sProcess.options.channelDropOut.Value = {config_struct.brainstorm.channel_drop_out, 'channels', 0};
+    
+    %% If the input is a raw file, segment it into "trials" with a sliding window
+    % The size of the window needs to be the same as the trials used to
+    % train the model - TODO
+    
+    
+    % If the first input is raw, all of them are. Brainstorm doesnt allow 
+    % inputs of both raw and trials
+    
+    [sStudy, iStudy, iData] = bst_get('DataFile', sInputs(1).FileName);
+    isRaw = strcmpi(sStudy.Data(iData).DataType, 'raw');
+    
+    
+    if isRaw % TODO - RIGHT NOW IT IS DONE ONLY FOR A SINGLE INPUT LINK TO RAW FILE - CHANGE TO MULITPLE
+        ImportOptions.ImportMode = 'Event';
+        ImportOptions.UseEvents = 1;
+        ImportOptions.EventsTimeRange = [0 sProcess.options.slidingWindowDuration.Value{1}(1)];
+        ImportOptions.GetAllEpochs = 0;
+        ImportOptions.iEpochs = 1;
+        ImportOptions.SplitRaw = 0;
+        ImportOptions.SplitLength = [];
+        ImportOptions.UseCtfComp = 1; % PROBABLY THIS IS ONLY FOR CTF - TODO
+        ImportOptions.UseSsp = 1;
+        ImportOptions.RemoveBaseline = 'all';
+        ImportOptions.BaselineRange = [];
+        ImportOptions.CreateConditions = 1;
+        ImportOptions.ChannelReplace = 1;
+        ImportOptions.ChannelAlign = 1;
+        ImportOptions.IgnoreShortEpochs = 1;
+        ImportOptions.EventsMode = 'ask';
+        ImportOptions.EventsTrackMode = 'ask';
+        ImportOptions.EventsTypes = '';
+        ImportOptions.DisplayMessages = 0;  % This prevents the importing GUI to pop up
+        ImportOptions.Precision = [];
+
+
+        for iInput = 1:length(sInputs) % Link to raw files inputs
+
+    %         [DataFile_path, DataFile_base] = bst_fileparts(DataFile);
+            [DataFile_path, DataFile_base] = bst_fileparts(sInputs(iInput).FileName);
+            [sStudy, iStudy, iData] = bst_get('DataFile', sInputs(iInput).FileName);
+            [sSubject, iSubject] = bst_get('Subject', sStudy.BrainStormSubject);
+
+            [sStudy, iStudy] = bst_get('StudyWithCondition', DataFile_path);
+    %         [sStudy, iStudy] = bst_get('StudyWithCondition', bst_fullfile(sSubject.Name, Condition));
+
+
+            % Read file descriptor
+            DataMat = in_bst_data(sInputs(iInput).FileName);
+            % Read channel file
+            ChannelFile = bst_get('ChannelFileForStudy', sInputs(iInput).FileName);
+            ChannelMat = in_bst_channel(ChannelFile);
+            % Get sFile structure
+            if isRaw
+                sFile = DataMat.F;
+            else
+                sFile = in_fopen(sInputs(iInput).FileName, 'BST-DATA');
+            end
+
+
+            % Create a fake event that corresponds to the sliding windows and their
+            % selected overlap
+
+            if isempty(sProcess.options.timewindow.Value{1})
+                timeRange = sFile.prop.times;
+            else
+                timeRange = sProcess.options.timewindow.Value{1};
+                % In case the selection is outside of the time vector, reassign
+                if timeRange(1)<sFile.prop.times(1)
+                    timeRange(1)=sFile.prop.times(1);
+                end
+                if timeRange(2)>sFile.prop.times(2)
+                    timeRange(2)=sFile.prop.times(2);
+                end
+            end
+
+            ImportOptions.TimeRange = timeRange;
+
+            % Check if it is needed to resample
+            if config_struct.brainstorm.fs~=sFile.prop.sfreq
+                ImportOptions.Resample = 1;
+                ImportOptions.ResampleFreq = config_struct.brainstorm.fs;
+            else
+                ImportOptions.Resample = 0;
+                ImportOptions.ResampleFreq = [];
+            end
+
+
+
+            % Get the starting timepoints of each window
+            slidingWindowTimes = timeRange(1):sProcess.options.slidingWindowDuration.Value{1}(1)*(100-sProcess.options.slidingWindowOverlap.Value{1})/100:timeRange(2);
+
+            newEvents.label      = 'slidingWindow';
+            newEvents.color      = [rand(1,1), rand(1,1), rand(1,1)];
+            newEvents.times      = slidingWindowTimes;
+            newEvents.reactTimes = [];
+            newEvents.select     = 1;
+            newEvents.epochs     = ones(1, size(newEvents(1).times, 2));
+            newEvents.channels   = cell(1, size(newEvents(1).times, 2));
+            newEvents.notes      = cell(1, size(newEvents(1).times, 2));
+
+            ImportOptions.events = newEvents;
+
+    %         NewFiles = import_data(DataFiles, ChannelMat, FileFormat, iStudyInit, iSubjectInit, ImportOptions, DateOfStudy)
+    %         NewFiles = import_data(sFile,     ChannelMat, FileFormat, iStudyInit, iSubjectInit, ImportOptions, DateOfStudy=[])
+            NewFiles = import_data(sFile, ChannelMat, sFile.format, iStudy, iSubject, ImportOptions, []);  % This is actually creating new database entries. Consider saving in the tmp folder - TODO
+        end
+        
+        % Get the "sInputs structure" of the trials so it can be used as an
+        % input to process_ivadomed_create_dataset 
+        sInputs_trials = bst_process('GetInputStruct', NewFiles); % should be sInputs_trials{iInput}
+    else
+        sInputs_trials = sInputs;
+    end
     
     
     %% Create a BIDS dataset with the trials to be segmented
     get_filenames = 1;
-    OutputFiles = process_ivadomed_create_dataset('Run', sProcess, sInputs, get_filenames);    
+    OutputFiles = process_ivadomed_create_dataset('Run', sProcess, sInputs_trials, get_filenames); % TODO - RIGHT NOW IT IS DONE ONLY FOR A SINGLE INPUT LINK TO RAW FILE - CHANGE TO MULITPLE
     
-    
+    disp('% TODO - RIGHT NOW IT IS DONE ONLY FOR A SINGLE INPUT LINK TO RAW FILE - CHANGE TO MULITPLE')
     %% Call ivadomed with "segment" method
     output = system([ivadomed_call ' --segment -c ' configFile ' -pd ' parentPath ' -po ' ivadomedOutputFolder]);
     if output~=0
-        bst_report('Error', sProcess, sInputs, 'Something went wrong during segmentation');
+        bst_report('Error', sProcess, sInputs_trials, 'Something went wrong during segmentation');
         return
     end
     
     %% Get ivadomed output segmentation files
-    segmentationMasks = cell(length(sInputs),1);
-    for iInput = 1:length(sInputs)
+    segmentationMasks = cell(length(sInputs_trials),1);
+    for iInput = 1:length(sInputs_trials)
         [a,b,c] = bst_fileparts(OutputFiles{iInput});
         [a,file_basename,c] = bst_fileparts(b);
 
@@ -252,9 +363,9 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     nEvents = 0;
     nTotalOcc = 0;
     
-    results = struct;
+    link_to_raw_file_events_times = []; % This is used only if the link to raw files are used
     
-    for iInput = 1:length(sInputs)
+    for iInput = 1:length(sInputs_trials)
         MriFile = segmentationMasks{iInput};
         unzippedMask = gunzip(MriFile);
 
@@ -266,7 +377,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         delete(unzippedMask{1})
         
         % Read trial info
-        dataMat = in_bst(sInputs(iInput).FileName);
+        dataMat = in_bst(sInputs_trials(iInput).FileName);
         
         F = dataMat.F;
         Time = dataMat.Time;
@@ -285,7 +396,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         F_segmented = false(size(F));
         
         % Get output study
-        [tmp, iStudy] = bst_process('GetOutputStudy', sProcess, sInputs(iInput));
+        [tmp, iStudy] = bst_process('GetOutputStudy', sProcess, sInputs_trials(iInput));
         % Get channel file
         sChannel = bst_get('ChannelForStudy', iStudy);
         % Load channel file
@@ -354,69 +465,94 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         %
         detectedEvt = [Time(start);Time(stop)]; % Create extended events
         
-
-        % ===== CREATE EVENTS =====
-        sEvent = [];
-        % Basic events structure
-        if isempty(dataMat.Events)
-            dataMat.Events = repmat(db_template('event'), 0);
-        end
-        % Process each event type separately
-        for i = 1:size(detectedEvt,2)
-            % Get the event to create
-            iEvt = find(strcmpi({dataMat.Events.label}, evtName));
-            % Existing event: reset it
-            if ~isempty(iEvt)
-                sEvent = dataMat.Events(iEvt);
-                sEvent.epochs     = [];
-                sEvent.times      = [];
-                sEvent.reactTimes = [];
-            % Else: create new event
-            else
-                % Initialize new event
-                iEvt = length(dataMat.Events) + 1;
-                sEvent = db_template('event');
-                sEvent.label = evtName;
-                % Get the default color for this new event
-                sEvent.color = panel_record('GetNewEventColor', iEvt, dataMat.Events);
-            end
-            % Times, samples, epochs
-            sEvent.times    = detectedEvt;
-            sEvent.epochs   = ones(1, size(sEvent.times,2));
-            
-            if strcmp(sProcess.options.annotation.Comment{1}, 'Partial')
-                sEvent.channels = cell(1, size(sEvent.times, 2));
-                for iEvent = 1:size(sEvent.times, 2)
-                    sEvent.channels{iEvent} = channelsContributingToAnnotation;
-                end
-            else
-                sEvent.channels = cell(1, size(sEvent.times, 2));
-            end
-            sEvent.notes    = cell(1, size(sEvent.times, 2));
-            % Add to events structure
-            dataMat.Events(iEvt) = sEvent;
-            nEvents = nEvents + 1;
-            nTotalOcc = nTotalOcc + size(sEvent.times, 2);
-        end
-
-        % ===== SAVE RESULT =====
-        % Progress bar
-        bst_progress('text', 'Saving results...');
-%         bst_progress('set', progressPos + round(3 * iFile / length(sInputs) / 3 * 100));
-        % Only save changes if something was detected
-        if ~isempty(sEvent)
-            %dataMat = rmfield(dataMat, 'Time');
-            % Save file definition
-            bst_save(file_fullpath(sInputs(iInput).FileName), dataMat, 'v6', 1);
-            % Report number of detected events
-%             bst_report('Info', sProcess, sInputs(iInput), sprintf('%s: %d events detected in %d categories', chanName, nTotalOcc, nEvents));
+        if isRaw
+            link_to_raw_file_events_times = [link_to_raw_file_events_times  detectedEvt + slidingWindowTimes(iInput)];
         else
-            bst_report('Warning', sProcess, sInputs(iInput), ['No event detected. Please check the annotations quality.']);
+            dataMat = create_new_event(dataMat, detectedEvt, evtName, channelsContributingToAnnotation, sProcess, 0);
+            % ===== SAVE RESULT =====
+            % Progress bar
+            bst_progress('text', 'Saving results...');
+    %         bst_progress('set', progressPos + round(3 * iFile / length(sInputs_trials) / 3 * 100));
+            % Only save changes if something was detected
+            if ~isempty(detectedEvt)
+                %dataMat = rmfield(dataMat, 'Time');
+                % Save file definition
+                bst_save(file_fullpath(sInputs_trials(iInput).FileName), dataMat, 'v6', 1);
+                % Report number of detected events
+    %             bst_report('Info', sProcess, sInputs_trials(iInput), sprintf('%s: %d events detected in %d categories', chanName, nTotalOcc, nEvents));
+            else
+                bst_report('Warning', sProcess, sInputs_trials(iInput), ['No event detected. Please check the annotations quality.']);
+            end
+            % Return all the input files
+            OutputFiles = {sInputs_trials.FileName};
         end
     end
-    % Return all the input files
-    OutputFiles = {sInputs.FileName};
+    
+    if isRaw
+        dataMat = in_bst_data(sInputs(1).FileName); % TODO - GENERALIZE TO MULTIPLE LINK TO RAW FILES INPUTS
+        dataMat = create_new_event(dataMat, link_to_raw_file_events_times, evtName, channelsContributingToAnnotation, sProcess, 1);
         
+        ProtocolInfo = bst_get('ProtocolInfo');
+        bst_save(bst_fullfile(ProtocolInfo.STUDIES, sInputs(1).FileName), dataMat, 'v6');
         
+        %% Delete the created trials
+    
+        % %     % Delete trials - TODO
+    
+        OutputFiles = {sInputs(1).FileName};
+    end
 end
-     
+
+function dataMat = create_new_event(dataMat, detectedEvt, evtName, channelsContributingToAnnotation, sProcess, isRaw)
+% ===== CREATE EVENTS =====
+    if isRaw
+        events = dataMat.F.events;
+    else
+        events = dataMat.Events;
+    end
+
+    sEvent = [];
+    % Basic events structure
+    if isempty(events)
+        events = repmat(db_template('event'), 0);
+    end
+    % Get the event to create
+    iEvt = find(strcmpi({events.label}, evtName));
+    % Existing event: reset it
+    if ~isempty(iEvt)
+        sEvent = events(iEvt);
+        sEvent.epochs     = [];
+        sEvent.times      = [];
+        sEvent.reactTimes = [];
+    % Else: create new event
+    else
+        % Initialize new event
+        iEvt = length(events) + 1;
+        sEvent = db_template('event');
+        sEvent.label = evtName;
+        % Get the default color for this new event
+        sEvent.color = panel_record('GetNewEventColor', iEvt, events);
+    end
+    % Times, epochs
+    sEvent.times  = detectedEvt;
+    sEvent.epochs = ones(1, size(sEvent.times,2));
+
+    if strcmp(sProcess.options.annotation.Comment{1}, 'Partial')
+        sEvent.channels = cell(1, size(sEvent.times, 2));
+        for iEvent = 1:size(sEvent.times, 2)
+            sEvent.channels{iEvent} = channelsContributingToAnnotation;
+        end
+    else
+        sEvent.channels = cell(1, size(sEvent.times, 2));
+    end
+    sEvent.notes    = cell(1, size(sEvent.times, 2));
+    % Add to events structure    
+    if isRaw
+        dataMat.F.events(iEvt) = sEvent;
+    else
+        dataMat.Events(iEvt) = sEvent;
+    end
+    
+end
+
+
