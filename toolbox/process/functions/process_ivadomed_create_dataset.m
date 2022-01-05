@@ -860,8 +860,10 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         % TopoType       : {'3DSensorCap', '2DDisc', '2DSensorCap', 2DLayout', '3DElectrodes', '3DElectrodes-Cortex', '3DElectrodes-Head', '3DElectrodes-MRI', '3DOptodes', '2DElectrodes'}
         
             
-        [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DSensorCap');     
-
+%         [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DSensorCap');     
+        [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DDisc');  
+%         hFig.Color = [0,0,0]; % This removes nose and ears
+        bst_figures('SetBackgroundColor', hFig, [0 0 0]); % 2DDisc shows a white background - change to black
 %         hFig.CurrentAxes.PlotBoxAspectRatio = [1,1,1];
 
 %         set(hFig, 'Visible', 'off');
@@ -996,7 +998,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         elseif isDerivative
             
             if ~sProcess.options.gaussian_annot.Value
-                threshold = 145;  % For annotating a single channel assigned it to 133
+                threshold = 150;  % For annotating a single channel assigned it to 133
                 img_gray(img_gray<threshold)=0;
                 img_gray(img_gray>=threshold)=1;
             end
@@ -1034,9 +1036,9 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
             % MONITOR
             % HARDCODED CHANNEL POSITION CORRECTION - TODO
             y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-            y_in_pixels = 2 + y_in_pixels/0.86;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+            y_in_pixels = 3.9 + y_in_pixels/0.894;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
             x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-            x_in_pixels = 2 + x_in_pixels/1.25;
+            x_in_pixels = 4 + x_in_pixels/1.3;
         end
     elseif all(Pix_SS == [1 1 1920 1080])
         if strcmp(figures_struct(iFile).Modality, 'MEG')
