@@ -290,8 +290,9 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'; % This hack accommodates up to 240 trials within a run - for more find another solution 
                                             % - like double letters (not the same though or the same IVADOMED loader problem would occur)
                  
-    ii = 1;
-                                            
+    
+    summed_trial_duration = 0; % This needs to be included in the config file, since the model needs to be applied on trials with the same timelength
+    
     info_trials = struct;
     
     txt  = [];
@@ -340,7 +341,8 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         else
             wanted_Fs = current_Fs;  % This is done here so it can be saved on the saved config file, and ultimately this sampling rate be used on the segementation function
         end
-
+        summed_trial_duration = summed_trial_duration + (info_trials(iInput).dataMat.Time(end) - info_trials(iInput).dataMat.Time(1)); % In seconds
+        
           % Get output study
         [tmp, iStudy] = bst_process('GetOutputStudy', sProcess, sInputs(iInput));
         % Get channel file
@@ -424,6 +426,9 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     
     disp(['Entries for "contrast_params": {training_validation} {testing}: ' txt])
     
+    
+    average_trial_duration = summed_trial_duration/length(sInputs);
+    
     %% Open a figure window to inherit properties
     
 %     [hFig, iDS, iFig] = view_topography(sInput.FileName, 'MEG', '2DSensorCap');        
@@ -486,7 +491,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     % === CREATE A TEMPLATE CONFIG.JSON WITH THE CREATED CONTRAST
     % PARAMETERS - REEVALUATE IF THIS IS NEEDED FOR FINAL RELEASE
     if strcmp(sProcess.options.convert.Value, 'conversion')
-        modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, {sInputs.FileName})
+        modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, {sInputs.FileName}, average_trial_duration)
     end
     
     
@@ -1203,7 +1208,7 @@ function export_readme(parentPath)
 end
 
 
-function modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, sInputs_filenames)
+function modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, sInputs_filenames, average_trial_duration)
 
 
     %% CHANGE THE CONFIG FILE TO RUN LOCALLY
@@ -1248,6 +1253,7 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     config_struct.brainstorm.jitter = sProcess.options.jitter.Value{1};
     config_struct.brainstorm.soft_annotation_threshold = sProcess.options.annotthresh.Value{1};
     config_struct.brainstorm.bids_folder_creation_mode = sProcess.options.bidsFolders.Comment{sProcess.options.bidsFolders.Value};
+    config_struct.brainstorm.average_trial_duration_in_seconds = average_trial_duration;
     
     % Adding an index to help identify the trial
     for i = 1:length(sInputs_filenames)

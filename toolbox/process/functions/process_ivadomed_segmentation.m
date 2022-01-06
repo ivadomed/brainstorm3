@@ -48,10 +48,6 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.timewindow.Type    = 'timewindow';
     sProcess.options.timewindow.Value   = [];
     % Sliding window 
-    sProcess.options.slidingWindowDuration.Comment = 'Sliding window duration';
-    sProcess.options.slidingWindowDuration.Type    = 'value';
-    sProcess.options.slidingWindowDuration.Value   = {2, 'ms', 0}; % TODO - CONSIDER SAVING THE TRIAL LENGTH ON THE CONFIG FILE
-    % Sliding window 
     sProcess.options.slidingWindowOverlap.Comment = 'Sliding windows overlap';
     sProcess.options.slidingWindowOverlap.Type    = 'value';
     sProcess.options.slidingWindowOverlap.Value   = {10, '%', 0};
@@ -237,7 +233,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     if isRaw % TODO - RIGHT NOW IT IS DONE ONLY FOR A SINGLE INPUT LINK TO RAW FILE - CHANGE TO MULITPLE
         ImportOptions.ImportMode = 'Event';
         ImportOptions.UseEvents = 1;
-        ImportOptions.EventsTimeRange = [0 sProcess.options.slidingWindowDuration.Value{1}(1)];
+        ImportOptions.EventsTimeRange = [0 config_struct.brainstorm.average_trial_duration_in_seconds];
         ImportOptions.GetAllEpochs = 0;
         ImportOptions.iEpochs = 1;
         ImportOptions.SplitRaw = 0;
@@ -311,7 +307,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
 
 
             % Get the starting timepoints of each window
-            slidingWindowTimes = timeRange(1):sProcess.options.slidingWindowDuration.Value{1}(1)*(100-sProcess.options.slidingWindowOverlap.Value{1})/100:timeRange(2);
+            slidingWindowTimes = timeRange(1):config_struct.brainstorm.average_trial_duration_in_seconds*(100-sProcess.options.slidingWindowOverlap.Value{1})/100:timeRange(2);
 
             newEvents.label      = 'slidingWindow';
             newEvents.color      = [rand(1,1), rand(1,1), rand(1,1)];
@@ -334,6 +330,26 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         sInputs_trials = bst_process('GetInputStruct', NewFiles); % should be sInputs_trials{iInput}
     else
         sInputs_trials = sInputs;
+        
+        % Add a warning if the trials are not the size of the trials that
+        % were used for training the selected model
+        
+        iPotentially_problematic_trials = [];
+        
+        for iInput = 1:length(sInputs)
+            time = in_bst(sInputs_trials(iInput).FileName, 'Time');
+            
+            time_length = time(end) - time(1);
+            if time_length > config_struct.brainstorm.average_trial_duration_in_seconds
+                iPotentially_problematic_trials = [iPotentially_problematic_trials, iInput];
+            end
+        end
+
+        bst_report('Warning', sProcess, sInputs(iPotentially_problematic_trials), ['These trials are longer than ' num2str(config_struct.brainstorm.average_trial_duration_in_seconds) ...
+                            ' seconds,  which is the size of the trials that the model was trained on, and the deep learning segmentation might be inaccurate. Consider creating smaller trials.']);
+
+        
+        
     end
     
     
@@ -481,12 +497,14 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                 % Report number of detected events
     %             bst_report('Info', sProcess, sInputs_trials(iInput), sprintf('%s: %d events detected in %d categories', chanName, nTotalOcc, nEvents));
             else
-                bst_report('Warning', sProcess, sInputs_trials(iInput), ['No event detected. Please check the annotations quality.']);
+                bst_report('Warning', sProcess, sInputs_trials(iInput), ['No event detected.']);
             end
             % Return all the input files
-            OutputFiles = {sInputs_trials.FileName};
+            OutputFilesNew = {sInputs_trials.FileName};
         end
     end
+    OutputFiles = OutputFilesNew;
+    
     
     if isRaw
         dataMat = in_bst_data(sInputs(1).FileName); % TODO - GENERALIZE TO MULTIPLE LINK TO RAW FILES INPUTS
