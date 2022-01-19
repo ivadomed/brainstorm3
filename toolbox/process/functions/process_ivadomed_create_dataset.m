@@ -488,10 +488,12 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     export_dataset_description(parentPath)
     export_readme(parentPath)
     
+    history_log = gather_trial_history_log({sInputs.FileName});
+    
     % === CREATE A TEMPLATE CONFIG.JSON WITH THE CREATED CONTRAST
     % PARAMETERS - REEVALUATE IF THIS IS NEEDED FOR FINAL RELEASE
     if strcmp(sProcess.options.convert.Value, 'conversion')
-        modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, {sInputs.FileName}, average_trial_duration)
+        modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, {sInputs.FileName}, average_trial_duration, history_log)
     end
     
     
@@ -867,14 +869,22 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
             
 %         [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DSensorCap');     
         [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DDisc');  
-%         hFig.Color = [0,0,0]; % This removes nose and ears
-        bst_figures('SetBackgroundColor', hFig, [0 0 0]); % 2DDisc shows a white background - change to black
+        hFig.Color = [0,0,0]; % This removes nose and ears
+%         bst_figures('SetBackgroundColor', hFig, [0 0 0]); % 2DDisc shows a white background - change to black
 %         hFig.CurrentAxes.PlotBoxAspectRatio = [1,1,1];
 
 %         set(hFig, 'Visible', 'off');
 %         set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 355 258]);  % THE AXIS IS [~,~,277.5, 238] WITH THIS CONFIGURATION
+
+        % First make the figure a bit smaller - This is just for looks
         set(hFig, 'Resize', 0);
-        set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 177.5 129]);
+        set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 100 50]);
+        
+        % The figure has 2 Children - 1: colorbar, 2: topography
+        % Resize topography
+        AxesHandle = hFig.Children(2);
+        set(AxesHandle, 'Units', 'pixels', 'Position', [10, 10, 30, 30]);
+
         
 %         AxesH = hFig.Children(2);
         AxesH.PlotBoxAspectRatio = [1,1,1];
@@ -954,7 +964,17 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     img = getframe(figures_struct(iFile).FigureObject.hFigure.Children);
     [height,width,~] = size(img.cdata);
 
-        
+    
+    % For edge effect removal, use this mask
+    imageSizeX = width;
+    imageSizeY = height;
+    [columnsInImage, rowsInImage] = meshgrid(1:imageSizeX, 1:imageSizeY);
+    centerX = 19.5;
+    centerY = 14.5;
+    radius = 10.5;
+    circlePixels_mask = (rowsInImage - centerX).^2 + (columnsInImage - centerY).^2 <= radius.^2;
+    
+    % Initiate NIFTI matrix
     NIFTI = zeros(height, width, length(Time), 'uint8');
     for iTime = 1:length(Time)
         
@@ -1009,6 +1029,16 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
             end
         end
         
+        
+        %
+        remove_edge_effects = 1;
+        if remove_edge_effects
+            img_gray_new = zeros(size(img_gray));
+            img_gray_new(circlePixels_mask) = img_gray(circlePixels_mask);
+            img_gray = img_gray_new;
+        end
+            
+        % Assign slice to NIFTI matrix
         NIFTI(:,:,iTime) = img_gray;
         
     end
@@ -1029,58 +1059,68 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     %Obtains this pixel information
     Pix_SS = get(0,'screensize');
 
-    if all(Pix_SS == [1 1 2560 1440])
-        if strcmp(figures_struct(iFile).Modality, 'MEG')
-            % MONITOR
-            % HARDCODED CHANNEL POSITION CORRECTION - TODO
-            y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-            y_in_pixels = y_in_pixels/0.84;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
-            x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-            x_in_pixels = 2 + x_in_pixels/1.25;
-        elseif strcmp(figures_struct(iFile).Modality, 'EEG')
-            % MONITOR
-            % HARDCODED CHANNEL POSITION CORRECTION - TODO
-            y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-            y_in_pixels = 3.9 + y_in_pixels/0.894;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
-            x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-            x_in_pixels = 4 + x_in_pixels/1.3;
-        end
-    elseif all(Pix_SS == [1 1 1920 1080])
-        if strcmp(figures_struct(iFile).Modality, 'MEG')
-            % LAPTOP
-            % HARDCODED CHANNEL POSITION CORRECTION - TODO
-            y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-            y_in_pixels = 0 + y_in_pixels/0.836;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
-            x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-            x_in_pixels = 1 + x_in_pixels/1.23;
-        elseif strcmp(figures_struct(iFile).Modality, 'EEG')
-            % LAPTOP
-            % HARDCODED CHANNEL POSITION CORRECTION - TODO
-            y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-            y_in_pixels = 1 + y_in_pixels/0.92;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
-            x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-            x_in_pixels = 2 + x_in_pixels/1.15;
-        end
-    elseif all(Pix_SS == [1 1 3840 2160])
-        if strcmp(figures_struct(iFile).Modality, 'MEG')
-            % LAPTOP
-            % HARDCODED CHANNEL POSITION CORRECTION - TODO
-            y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-            y_in_pixels = 2.4 + y_in_pixels/0.87;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
-            x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-            x_in_pixels = 2 + x_in_pixels/2.32;
-        elseif strcmp(figures_struct(iFile).Modality, 'EEG')
-            % LAPTOP
-            % HARDCODED CHANNEL POSITION CORRECTION - TODO
-            y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-            y_in_pixels = 3 + y_in_pixels/0.89;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
-            x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-            x_in_pixels = 3 + x_in_pixels/2.4;
-        end
-    else
-        error('Unknown monitor - Need to calibrate - Also time to get rid of these harcoded parts!')
-    end
+%     if all(Pix_SS == [1 1 2560 1440])
+%         if strcmp(figures_struct(iFile).Modality, 'MEG')
+%             % MONITOR
+%             % HARDCODED CHANNEL POSITION CORRECTION - TODO
+%             y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%             y_in_pixels = y_in_pixels/0.84;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+%             x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+%             x_in_pixels = 2 + x_in_pixels/1.25;
+%         elseif strcmp(figures_struct(iFile).Modality, 'EEG')
+%             % MONITOR
+%             % HARDCODED CHANNEL POSITION CORRECTION - TODO
+%             y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%             y_in_pixels = 3.9 + y_in_pixels/0.894;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+%             x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+%             x_in_pixels = 4 + x_in_pixels/1.3;
+%         end
+%     elseif all(Pix_SS == [1 1 1920 1080])
+%         if strcmp(figures_struct(iFile).Modality, 'MEG')
+%             % LAPTOP
+%             % HARDCODED CHANNEL POSITION CORRECTION - TODO
+%             y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%             y_in_pixels = 0 + y_in_pixels/0.836;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+%             x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+%             x_in_pixels = 1 + x_in_pixels/1.23;
+%         elseif strcmp(figures_struct(iFile).Modality, 'EEG')
+%             % LAPTOP
+%             % HARDCODED CHANNEL POSITION CORRECTION - TODO
+%             y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%             y_in_pixels = 1 + y_in_pixels/0.92;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+%             x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+%             x_in_pixels = 2 + x_in_pixels/1.15;
+%         end
+%     elseif all(Pix_SS == [1 1 3840 2160])
+%         if strcmp(figures_struct(iFile).Modality, 'MEG')
+%             % LAPTOP
+%             % HARDCODED CHANNEL POSITION CORRECTION - TODO
+%             y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%             y_in_pixels = 2.4 + y_in_pixels/0.87;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+%             x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+%             x_in_pixels = 2 + x_in_pixels/2.32;
+%         elseif strcmp(figures_struct(iFile).Modality, 'EEG')
+%             % LAPTOP
+%             % HARDCODED CHANNEL POSITION CORRECTION - TODO
+%             y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%             y_in_pixels = 3 + y_in_pixels/0.89;  % The axis ratio needs to be [1,1,1] TODO - to remove hardcoded entry     
+%             x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+%             x_in_pixels = 3 + x_in_pixels/2.4;
+%         end
+%     else
+%         error('Unknown monitor - Need to calibrate - Also time to get rid of these harcoded parts!')
+%     end
 
+    
+    y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+    y_in_pixels = 4+ 0.95*y_in_pixels;
+
+    
+    x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+    x_in_pixels = 3.7+ 0.71*x_in_pixels;
+
+    
+    
     
     
     %% Gather channel coordinates in a struct
@@ -1101,7 +1141,30 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 %     hold on
 %     plot(y_in_pixels, x_in_pixels,'*r')
 %     hold off
-
+% 
+%     
+% 
+%     %% Visualize perfect circle from cropping (gets rid of interpolation edge effects)
+%     
+%     figure(1);
+%     imagesc(squeeze(NIFTI(:,:,iTime))); title 'Brainstorm topography'
+%     hold on
+%     plot(y_in_pixels, x_in_pixels,'*r')
+%     hold off
+%     figure(2);
+%     imagesc(circlePixels_mask'); title 'Mask'; colormap gray
+%     hold on
+%     plot(y_in_pixels, x_in_pixels,'*r')
+%     hold off
+%     
+%     single_slice = squeeze(NIFTI(:,:,iTime))';
+%     croppedNIFTI = zeros(size(single_slice));
+%     croppedNIFTI(circlePixels_mask) = single_slice(circlePixels_mask);
+%     figure(3);
+%     imagesc(croppedNIFTI'); title 'Cropped edges'
+%     hold on
+%     plot(y_in_pixels, x_in_pixels,'*r')
+%     hold off
     
 end
 
@@ -1208,7 +1271,7 @@ function export_readme(parentPath)
 end
 
 
-function modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, sInputs_filenames, average_trial_duration)
+function modify_config_json(parentPath, modality, annotation, contrast_params_txt, sProcess, sInputs_filenames, average_trial_duration, history_log)
 
 
     %% CHANGE THE CONFIG FILE TO RUN LOCALLY
@@ -1260,6 +1323,11 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
         sInputs_filenames{i} = [num2str(i) ': ' sInputs_filenames{i}];
     end
     config_struct.brainstorm.sInputs = sInputs_filenames;
+
+    % Add file history
+    config_struct.brainstorm.file_history = history_log;
+
+    
     
     % Save back to json
     txt = jsonencode(config_struct, 'PrettyPrint', true);
@@ -1297,3 +1365,24 @@ function F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, 
 
 end
 
+
+function history_log = gather_trial_history_log(trialFileNames)
+    history_log = struct;
+
+    for iTrial = 1:length(trialFileNames)
+        temp_struct = struct;
+        
+        sMat = in_bst(trialFileNames{iTrial}, 'History');
+        single_file_history = {sMat.History{:,2}; sMat.History{:,3}}';
+        single_file_history = cellfun(@cell2mat,num2cell(single_file_history,2),'un',0);
+        temp_struct.trialfname = trialFileNames{iTrial};
+        temp_struct.history = single_file_history;
+
+        
+        history_log(iTrial).trial = temp_struct;
+        
+    end
+    
+    disp(1)
+
+end

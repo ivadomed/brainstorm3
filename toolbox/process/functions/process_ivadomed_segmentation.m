@@ -72,6 +72,19 @@ function sProcess = GetDescription() %#ok<DEFNU>
         {{'.folder'}, 'Model output folder', 'IVADOMED'}, ... % Available file formats
         []};                               % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,AnatIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn}
     
+%     % Model selection options
+%     SelectOptions = {...
+%         '', ...                               % Filename
+%         '', ...                               % FileFormat
+%         'open', ...                           % Dialog type: {open,save}
+%         'Import model...', ...               % Window title
+%         'ImportData', ...                     % LastUsedDir: {ImportData,ImportChannel,ImportAnat,ExportChannel,ExportData,ExportAnat,ExportProtocol,ExportImage,ExportScript}
+%         'single', ...                         % Selection mode: {single,multiple}
+%         'files', ...                          % Selection mode: {files,dirs,files_and_dirs}
+%         bst_get('FileFilters', 'model', 'IVADOMED'), ... % Get all the available file formats
+%         'EventsIn'};                          % DefaultFormats: {ChannelIn,DataIn,DipolesIn,EventsIn,MriIn,NoiseCovIn,ResultsIn,SspIn,SurfaceIn,TimefreqIn
+    
+    
     % Deep learning model
     sProcess.options.label2.Comment = '<B>Ivadomed trained model</B>';
     sProcess.options.label2.Type    = 'label';
@@ -79,6 +92,10 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.modelfolder.Comment = 'Deep learning model output folder:';
     sProcess.options.modelfolder.Type    = 'filename';
     sProcess.options.modelfolder.Value   = SelectOptions;
+%     % Option: Model file
+%     sProcess.options.modelfile.Comment = 'Deep learning model file:';
+%     sProcess.options.modelfile.Type    = 'filename';
+%     sProcess.options.modelfile.Value   = SelectOptions;
     % Newly created Event name
     sProcess.options.eventname.Comment = 'Label for annotated event: ';
     sProcess.options.eventname.Type    = 'text';
