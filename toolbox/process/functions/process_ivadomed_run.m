@@ -25,7 +25,7 @@ function varargout = process_ivadomed_run( varargin )
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Author: Konstantinos Nasiotis, 2021
+% Author: Konstantinos Nasiotis, 2021-2022
 
 eval(macro_method);
 end

@@ -26,7 +26,7 @@ function varargout = process_ivadomed_create_dataset( varargin )
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Author: Konstantinos Nasiotis, 2021
+% Author: Konstantinos Nasiotis, 2021-2022
 
 eval(macro_method);
 end
@@ -308,7 +308,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         iEpoch = str2double(splitComment{2});
         
         if ~strcmp(modality, 'MEG+EEG')
-            if ~sProcess.options.bidsFolders.Value==3
+            if ~(sProcess.options.bidsFolders.Value==3)
             
                 % This is a hack until the ivadomed code is changed - TODO
                 iLetter = floor(iEpoch/10);
@@ -375,17 +375,29 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                 info_trials(iInput).OutputChannelsFileDerivative = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
                 info_trials(iInput).OutputTimesFileDerivative    = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['times_' trial{1} '.csv']);
 
+                if iInput==1
+                    txt = ['"' trial{iTrial} '"'];
+                else
+                    txt = [txt ', "' trial{iTrial} '"'];
+                end
+                
             elseif sProcess.options.bidsFolders.Value==2
                 % Images
                 subject = [subject session];
-                info_trials(iInput).OutputMriFile      = bst_fullfile(['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '.nii']);
-                info_trials(iInput).OutputChannelsFile = bst_fullfile(['sub-' subject], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFile    = bst_fullfile(['sub-' subject], 'anat', ['times_' trial{iTrial} '.csv']);
+                info_trials(iInput).OutputMriFile{iTrial} = bst_fullfile(['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '.nii']);
+                info_trials(iInput).OutputChannelsFile    = bst_fullfile(['sub-' subject], 'anat', 'channels.csv');
+                info_trials(iInput).OutputTimesFile       = bst_fullfile(['sub-' subject], 'anat', ['times_' trial{iTrial} '.csv']);
 
                 % Derivatives
-                info_trials(iInput).OutputMriFileDerivative{iTrial} = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '_' annotation '.nii']);
-                info_trials(iInput).OutputChannelsFileDerivative    = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFileDerivative       = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['times_' trial{1} '.csv']);
+                info_trials(iInput).OutputMriFileDerivative{iTrial}   = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '_' annotation '.nii']);
+                info_trials(iInput).OutputChannelsFileDerivative      = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', 'channels.csv');
+                info_trials(iInput).OutputTimesFileDerivative = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['times_' trial{1} '.csv']);
+                
+                if iInput==1
+                    txt = ['"' trial{iTrial} '"'];
+                else
+                    txt = [txt ', "' trial{iTrial} '"'];
+                end
                 
             elseif sProcess.options.bidsFolders.Value==3
                 % Images
@@ -462,7 +474,11 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         bst_progress('start', 'Ivadomed', 'Converting trials to NIFTI files...', 0, length(sInputs));
         for iFile = 1:length(info_trials)
             disp(['Trial: ' num2str(iFile) '/' num2str(length(info_trials))])
-            [filenames(iFile), subjects(iFile)] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
+            
+            % Don't recompute if it already exists (might want to remove that - TODO)
+            if ~(exist(bst_fullfile(info_trials(iFile).parentPath, [info_trials(iFile).OutputMriFile{1} '.gz']), 'file') == 2)
+                [filenames(iFile), subjects(iFile)] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
+            end
             bst_progress('inc', 1);
         end
     end
@@ -524,7 +540,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     [temp1,folder_output,temp2] = bst_fileparts(parentPath);
 
     % Command to run on the terminal for copying files
-    disp(['scp -rp ' parentPath ' u111358@rosenberg.neuro.polymtl.ca:/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/distant_spikes_2_seconds_gaussian_annotation/data_' folder_output '_gaussian_annotation']);
+    disp(['scp -rp ' parentPath ' u111358@rosenberg.neuro.polymtl.ca:/home/GRAMES.POLYMTL.CA/u111358/data_nvme_u111358/EEG-ivado/epilepsy/all_spikes_2_seconds/data_' folder_output '_gaussian_annotation']);
     
 end
 
@@ -876,26 +892,23 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
 %         set(hFig, 'Visible', 'off');
 %         set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 355 258]);  % THE AXIS IS [~,~,277.5, 238] WITH THIS CONFIGURATION
 
-        % First make the figure a bit smaller - This is just for looks
+%         First make the figure a bit smaller - This is just for looks
         set(hFig, 'Resize', 0);
         set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 100 50]);
         
         % The figure has 2 Children - 1: colorbar, 2: topography
         % Resize topography
         AxesHandle = hFig.Children(2);
-        set(AxesHandle, 'Units', 'pixels', 'Position', [10, 10, 30, 30]);
-
-        
-%         AxesH = hFig.Children(2);
-        AxesH.PlotBoxAspectRatio = [1,1,1];
+        set(AxesHandle, 'Units', 'pixels', 'Position', [10, 10, 34, 32]);
+% 
+        AxesHandle.PlotBoxAspectRatio = [1,1,1];
         pause(.05);
-%         set(AxesH, 'Units', 'pixels', 'Position', [10, 10, 100, 86]);
-%         
-%                 daspect([1 1 1])
+        daspect([1 1 1])
 
         
-        
-        % Find index that just opened figure corresponds to (this is done for enabling parallelization)
+        % Find index that just opened figure corresponds to (this is done
+        % for enabling parallelization) - COULDNT PARALLELIZE - TODO -
+        % MAYBE REMOVE
         all_datafiles = {GlobalData.DataSet.DataFile};
         [temp, index] = ismember(FileName, all_datafiles);
         
@@ -913,7 +926,8 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         bst_colormaps('SetColormapName', ColormapType, colormapName);
 
 
-        % If there are any contours, remove them
+        % If there are any contours, remove them - TODO - CHECK IF THIS
+        % NEEDS TO BE REVISITED
         % Delete contour objects
 % % %         delete(TopoHandles.hContours);
 % % %         GlobalData.DataSet(iDS).Figure(iFig).Handles.hContours = [];
@@ -947,7 +961,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 % % % %     copyobj(ax1Chil, ax2)
 % % % %     set(ax2.Children(1), 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
     
-    
+
     % GLOBAL MIN_MAX FOR EACH TRIAL
     the_min = min(min(F(selectedChannels,:)));
     the_max = max(max(F(selectedChannels,:)));
@@ -969,7 +983,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     imageSizeX = width;
     imageSizeY = height;
     [columnsInImage, rowsInImage] = meshgrid(1:imageSizeX, 1:imageSizeY);
-    centerX = 19.5;
+    centerX = 19.5;  % These values are based on the axes dimensions selected on when the figure is resized.
     centerY = 14.5;
     radius = 10.5;
     circlePixels_mask = (rowsInImage - centerX).^2 + (columnsInImage - centerY).^2 <= radius.^2;
@@ -1030,8 +1044,9 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         end
         
         
-        %
-        remove_edge_effects = 1;
+        % This gets rids of the pixels that have interpolated values at the
+        % edge of the skull.
+        remove_edge_effects = 0;
         if remove_edge_effects
             img_gray_new = zeros(size(img_gray));
             img_gray_new(circlePixels_mask) = img_gray(circlePixels_mask);
@@ -1111,13 +1126,25 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 %         error('Unknown monitor - Need to calibrate - Also time to get rid of these harcoded parts!')
 %     end
 
-    
-    y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-    y_in_pixels = 4+ 0.95*y_in_pixels;
+
+    y_markerLocs = figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1);
+    x_markerLocs = figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2);
 
     
-    x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-    x_in_pixels = 3.7+ 0.71*x_in_pixels;
+%     y_in_pixels = pos(3) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+%     y_in_pixels = 0.95*y_in_pixels;
+
+    
+    
+    y_in_pixels = size(NIFTI,1) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
+    y_in_pixels = 1 + 0.938 * y_in_pixels;
+    
+
+    
+%     x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+    x_in_pixels = size(NIFTI,2) - size(NIFTI,2) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
+    x_in_pixels = 2+ 0.94*x_in_pixels;
+%     x_in_pixels =x_in_pixels;
 
     
     
@@ -1141,18 +1168,18 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 %     hold on
 %     plot(y_in_pixels, x_in_pixels,'*r')
 %     hold off
-% 
+
 %     
 % 
-%     %% Visualize perfect circle from cropping (gets rid of interpolation edge effects)
-%     
+    %% Visualize perfect circle from cropping (gets rid of interpolation edge effects)
+    
 %     figure(1);
-%     imagesc(squeeze(NIFTI(:,:,iTime))); title 'Brainstorm topography'
+%     imagesc(squeeze(NIFTI(:,:,iTime)));colormap gray; title 'Brainstorm topography'
 %     hold on
 %     plot(y_in_pixels, x_in_pixels,'*r')
 %     hold off
 %     figure(2);
-%     imagesc(circlePixels_mask'); title 'Mask'; colormap gray
+%     imagesc(circlePixels_mask'); colormap gray; title 'Mask'; colormap gray
 %     hold on
 %     plot(y_in_pixels, x_in_pixels,'*r')
 %     hold off
@@ -1161,7 +1188,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 %     croppedNIFTI = zeros(size(single_slice));
 %     croppedNIFTI(circlePixels_mask) = single_slice(circlePixels_mask);
 %     figure(3);
-%     imagesc(croppedNIFTI'); title 'Cropped edges'
+%     imagesc(croppedNIFTI'); colormap gray; title 'Cropped edges'
 %     hold on
 %     plot(y_in_pixels, x_in_pixels,'*r')
 %     hold off
@@ -1358,10 +1385,14 @@ function F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, 
     
     % Now insert it on a signal 
     if isempty(iAnnotation_channels)
-        F_derivative = repmat(single_channel_gaussian_annotation, size(F_derivative,1), 1);
+        gaussian_annotation = repmat(single_channel_gaussian_annotation, size(F_derivative,1), 1);
     else
-        F_derivative = repmat(single_channel_gaussian_annotation, length(iAnnotation_channels), 1);
+        gaussian_annotation = repmat(single_channel_gaussian_annotation, length(iAnnotation_channels), 1);
     end
+    
+    F_derivative = F_derivative + gaussian_annotation;
+    
+    F_derivative(F_derivative>1) = 1;
 
 end
 

@@ -572,7 +572,7 @@ function isOk = PlotFigure(iDS, iFig, isReset) %#ok<DEFNU>
             % Clean from some pathological triangles
             Faces_surf = tess_threshold(Vertices_surf, Faces_surf, 25, 20, 179);
             % Plot nose / ears
-            %PlotNoseEars(hAxes, 0);
+            PlotNoseEars(hAxes, 0);
             % Store the sensor markers positions
             [Xmark,Ymark] = bst_project_2d(markers_loc(:,1), markers_loc(:,2), markers_loc(:,3), '2dcap');
             Xmark = (Xmark - Xm(1)) / R * 2 - (Xm(2)-Xm(1))/R;

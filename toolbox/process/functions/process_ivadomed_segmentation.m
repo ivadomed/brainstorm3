@@ -20,7 +20,7 @@ function varargout = process_ivadomed_segmentation( varargin )
 % For more information type "brainstorm license" at command prompt.
 % =============================================================================@
 %
-% Authors: Konstantinos Nasiotis 2021
+% Authors: Konstantinos Nasiotis 2021-2022
 
 eval(macro_method);
 end
@@ -269,7 +269,11 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         ImportOptions.DisplayMessages = 0;  % This prevents the importing GUI to pop up
         ImportOptions.Precision = [];
 
-
+        % TODO
+        if length(sInputs)>1
+            bst_error('Multiple link to raw file inputs not supported yet. Drop a single link to raw file to the processing box')
+        end
+        
         for iInput = 1:length(sInputs) % Link to raw files inputs
 
     %         [DataFile_path, DataFile_base] = bst_fileparts(DataFile);
@@ -321,8 +325,6 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                 ImportOptions.ResampleFreq = [];
             end
 
-
-
             % Get the starting timepoints of each window
             slidingWindowTimes = timeRange(1):config_struct.brainstorm.average_trial_duration_in_seconds*(100-sProcess.options.slidingWindowOverlap.Value{1})/100:timeRange(2);
 
@@ -337,14 +339,32 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
 
             ImportOptions.events = newEvents;
 
+            % Import the trials in the database
+            % NOTE: The output does not include the BAD trials
     %         NewFiles = import_data(DataFiles, ChannelMat, FileFormat, iStudyInit, iSubjectInit, ImportOptions, DateOfStudy)
     %         NewFiles = import_data(sFile,     ChannelMat, FileFormat, iStudyInit, iSubjectInit, ImportOptions, DateOfStudy=[])
+            
             NewFiles = import_data(sFile, ChannelMat, sFile.format, iStudy, iSubject, ImportOptions, []);  % This is actually creating new database entries. Consider saving in the tmp folder - TODO
         end
         
         % Get the "sInputs structure" of the trials so it can be used as an
         % input to process_ivadomed_create_dataset 
-        sInputs_trials = bst_process('GetInputStruct', NewFiles); % should be sInputs_trials{iInput}
+        sInputs_trials = bst_process('GetInputStruct', NewFiles); % should be sInputs_trials{iInput} - TODO
+        
+        % Find which point in time of the recording is sliding window
+        % starts at. I could only find this info being stored at the file's
+        % history. Might need to revisit this - TODO
+        slidingWindowTimes = zeros(length(NewFiles),1);
+        
+        for iTrial = 1:length(NewFiles)
+            trial_info = in_bst(NewFiles{iTrial}, 'History');
+            iRawHistory = find(ismember({trial_info.History{:,2}}, 'import_time'));
+            temp_segment_boundaries = strsplit(trial_info.History{iRawHistory,3},{'[',',',']'});
+            slidingWindowTimes(iTrial) = str2double(temp_segment_boundaries{2});
+        end
+        
+        
+        
     else
         sInputs_trials = sInputs;
         
@@ -482,7 +502,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         stop = find(a<0);
         
         if length(start)~=length(stop)
-            stop % deal with this
+            stop % TODO - deal with this
         end
         
 %         % Make a summary plot
@@ -516,12 +536,12 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
             else
                 bst_report('Warning', sProcess, sInputs_trials(iInput), ['No event detected.']);
             end
-            % Return all the input files
-            OutputFilesNew = {sInputs_trials.FileName};
+            
         end
     end
+    % Return all the input files
+    OutputFilesNew = {sInputs_trials.FileName};
     OutputFiles = OutputFilesNew;
-    
     
     if isRaw
         dataMat = in_bst_data(sInputs(1).FileName); % TODO - GENERALIZE TO MULTIPLE LINK TO RAW FILES INPUTS
