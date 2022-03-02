@@ -892,6 +892,9 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
 %         set(hFig, 'Visible', 'off');
 %         set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 355 258]);  % THE AXIS IS [~,~,277.5, 238] WITH THIS CONFIGURATION
 
+        % Remove contour lines
+        figure_topo('SetTopoLayoutOptions', 'ContourLines', 0);
+
 %         First make the figure a bit smaller - This is just for looks
         set(hFig, 'Resize', 0);
         set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 100 50]);
@@ -904,7 +907,7 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         AxesHandle.PlotBoxAspectRatio = [1,1,1];
         pause(.05);
         daspect([1 1 1])
-
+        
         
         % Find index that just opened figure corresponds to (this is done
         % for enabling parallelization) - COULDNT PARALLELIZE - TODO -
