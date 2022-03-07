@@ -64,12 +64,12 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.eventname_help.Comment = '<I><FONT color="#777777">If the eventname is left empty, the annotations are based on the following time-window within each trial</FONT></I>';
     sProcess.options.eventname_help.Type    = 'label';
     % Options: Segment around spike
-    sProcess.options.timewindow.Comment  = 'Annotations Time window: ';
-    sProcess.options.timewindow.Type     = 'range';
-    sProcess.options.timewindow.Value    = {[-0.150, 0.150],'ms',[]};
+    sProcess.options.timewindow_annot.Comment  = 'Annotations Time window: ';
+    sProcess.options.timewindow_annot.Type     = 'range';
+    sProcess.options.timewindow_annot.Value    = {[-0.150, 0.150],'ms',[]};
     % Event help comment
-    sProcess.options.timewindow_help.Comment = '<I><FONT color="#777777">This time window is only used for annotating around single events or if event name is empty</FONT></I>';
-    sProcess.options.timewindow_help.Type    = 'label';
+    sProcess.options.timewindow_annot_help.Comment = '<I><FONT color="#777777">This time window is only used for annotating around single events or if event name is empty</FONT></I>';
+    sProcess.options.timewindow_annot_help.Type    = 'label';
     
     % Needed Fs
     sProcess.options.fs.Comment = 'Resampling rate <I><FONT color="#777777">(empty for no resampling)</FONT></I>';
@@ -197,8 +197,8 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
             runs{iInput} = num2str(iRun);
 
             if isempty(sProcess.options.eventname.Value)
-                if length(sProcess.options.timewindow.Value{1})<2 || isempty(sProcess.options.timewindow.Value{1}) || ...
-                        sProcess.options.timewindow.Value{1}(1)<Time(1) || sProcess.options.timewindow.Value{1}(2)>Time(end)
+                if length(sProcess.options.timewindow_annot.Value{1})<2 || isempty(sProcess.options.timewindow_annot.Value{1}) || ...
+                        sProcess.options.timewindow_annot.Value{1}(1)<Time(1) || sProcess.options.timewindow_annot.Value{1}(2)>Time(end)
                     inputs_to_remove(iInput) = true;
                     bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
                 end
@@ -214,7 +214,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                     bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
                 else
 %                     % TODO - THIS IS WRONG - IT SHOULD BE REJECTED IF ALL ANNOTATIONS ARE OUT OF BOUNDS, NOT JUST THE FIRST AND LAST
-                    if Time(1) > sProcess.options.timewindow.Value{1}(1) + events(index).times(1) || Time(end) < events(index).times(end) + sProcess.options.timewindow.Value{1}(2)
+                    if Time(1) > sProcess.options.timewindow_annot.Value{1}(1) + events(index).times(1) || Time(end) < events(index).times(end) + sProcess.options.timewindow_annot.Value{1}(2)
                         inputs_to_remove(iInput) = true;
                         bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
                     end
@@ -586,7 +586,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 %                 single_info_trial.dataMat.Events(end+1).label = 'partial_annotation';
 %                 single_info_trial.dataMat.Events(end).color = [0,1,0];
 %                 single_info_trial.dataMat.Events(end).epochs = 1;
-%                 single_info_trial.dataMat.Events(end).times = [sProcess.options.timewindow.Value{1}(1:2)]';
+%                 single_info_trial.dataMat.Events(end).times = [sProcess.options.timewindow_annot.Value{1}(1:2)]';
 %                 single_info_trial.dataMat.Events(end).reactTimes = [];
 %                 single_info_trial.dataMat.Events(end).select = 1;
 %                 single_info_trial.dataMat.Events(end).notes = {[]};
@@ -779,7 +779,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                                 % If no specific channels are annotated, annotate the entire slice
                                 if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent})
                                     if sProcess.options.gaussian_annot.Value
-                                        F_derivative = gaussian_annotation(F_derivative, [], iAnnotation_time_edges);
+                                        F_derivative = gaussian_annotation_function(F_derivative, [], iAnnotation_time_edges);
                                     else                                    
                                         F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
                                     end
@@ -788,7 +788,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                                     selectedChannels = iAnnotation_channels;
                                     
                                     if sProcess.options.gaussian_annot.Value
-                                        F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
+                                        F_derivative = gaussian_annotation_function(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
                                     else                                    
                                         F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
                                     end
@@ -800,12 +800,12 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                             for iEvent = 1:size(single_info_trial.dataMat.Events(iSelectedEvent).times,2)
                                 % Here the annotation is defined by the selected event
                                 % and the time-window selected around it
-                                iAnnotation_time_edges  = bst_closest(single_info_trial.dataMat.Events(iSelectedEvent).times(iEvent)+sProcess.options.timewindow.Value{1}, single_info_trial.dataMat.Time);
+                                iAnnotation_time_edges  = bst_closest(single_info_trial.dataMat.Events(iSelectedEvent).times(iEvent)+sProcess.options.timewindow_annot.Value{1}, single_info_trial.dataMat.Time);
 
                                 % If no specific channels are annotated, annotate the entire slice
                                 if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent})
                                     if sProcess.options.gaussian_annot.Value
-                                        F_derivative = gaussian_annotation(F_derivative, [], iAnnotation_time_edges);
+                                        F_derivative = gaussian_annotation_function(F_derivative, [], iAnnotation_time_edges);
                                     else                                    
                                         F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
                                     end
@@ -814,7 +814,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                                     selectedChannels = iAnnotation_channels;
                                     
                                     if sProcess.options.gaussian_annot.Value
-                                        F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
+                                        F_derivative = gaussian_annotation_function(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
                                     else                                    
                                         F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
                                     end
@@ -824,7 +824,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                     end
                 else  % No event selected - ANNOTATE BASED ON THE SELECTED TIME WINDOW WITHIN THE TIME IN TRIAL
                     annotationValue = annotationValue+1;
-                    iAnnotation_time_edges  = bst_closest(sProcess.options.timewindow.Value{1}, single_info_trial.dataMat.Time);
+                    iAnnotation_time_edges  = bst_closest(sProcess.options.timewindow_annot.Value{1}, single_info_trial.dataMat.Time);
                     % Annotate the entire slice
                     F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
                 end
@@ -887,26 +887,29 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         [hFig, iDS, iFig] = view_topography(FileName, Modality, '2DDisc');  
         hFig.Color = [0,0,0]; % This removes nose and ears
 %         bst_figures('SetBackgroundColor', hFig, [0 0 0]); % 2DDisc shows a white background - change to black
-%         hFig.CurrentAxes.PlotBoxAspectRatio = [1,1,1];
 
 %         set(hFig, 'Visible', 'off');
-%         set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 355 258]);  % THE AXIS IS [~,~,277.5, 238] WITH THIS CONFIGURATION
 
         % Remove contour lines
         figure_topo('SetTopoLayoutOptions', 'ContourLines', 0);
+        
+        AxesHandle = hFig.Children(2);
+        pause(.05);
 
-%         First make the figure a bit smaller - This is just for looks
+        AxesHandle.PlotBoxAspectRatio = [1,1,1];
+        daspect([1 1 1])
+
+%       First make the figure a bit smaller - This is just for looks
         set(hFig, 'Resize', 0);
-        set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 100 50]);
+        set(hFig, 'Position', [hFig.Position(1) hFig.Position(2) 64 64]);
+        
         
         % The figure has 2 Children - 1: colorbar, 2: topography
         % Resize topography
-        AxesHandle = hFig.Children(2);
-        set(AxesHandle, 'Units', 'pixels', 'Position', [10, 10, 34, 32]);
-% 
-        AxesHandle.PlotBoxAspectRatio = [1,1,1];
-        pause(.05);
-        daspect([1 1 1])
+        
+        
+        set(AxesHandle, 'Units', 'pixels', 'Position', [10, 10, 38, 36]);  % Even though I set position [32,32] the getframe returns a 32x32. Leaving it at 34x32 here
+%         set(AxesHandle, 'Units', 'pixels', 'Position', [10, 10, 32, 32]);
         
         
         % Find index that just opened figure corresponds to (this is done
@@ -920,20 +923,11 @@ function figures_struct = open_close_topography_window(FileName, action, iFile, 
         figures_struct(iFile).Modality     = Modality;
         
 
-        %TODO - GET COLORMAP TYPE AUTOMATICALLY (meg - eeg - fnirs)
-        % Get figure colormap
-        
+        % Set figure colormap        
         ColormapType = lower(Modality);  % meg, eeg, fnirs
         colormapName = 'gray';
-%         colormapName = 'mine';
         bst_colormaps('SetColormapName', ColormapType, colormapName);
 
-
-        % If there are any contours, remove them - TODO - CHECK IF THIS
-        % NEEDS TO BE REVISITED
-        % Delete contour objects
-% % %         delete(TopoHandles.hContours);
-% % %         GlobalData.DataSet(iDS).Figure(iFig).Handles.hContours = [];
 
     elseif strcmp(action, 'close')
         % Close window
@@ -980,7 +974,12 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 
     img = getframe(figures_struct(iFile).FigureObject.hFigure.Children);
     [height,width,~] = size(img.cdata);
-
+    
+    if height~=38 || width~=36
+       disp(['Forcing resize on the image of trial: ' num2str(iFile) ])
+       img.cdata = imresize(img.cdata, [38, 36]);
+    end
+    img.cdata = img.cdata(5:36,3:34,:);
     
     % For edge effect removal, use this mask
     imageSizeX = width;
@@ -991,6 +990,9 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     radius = 10.5;
     circlePixels_mask = (rowsInImage - centerX).^2 + (columnsInImage - centerY).^2 <= radius.^2;
     
+    
+    [height,width,~] = size(img.cdata);
+
     % Initiate NIFTI matrix
     NIFTI = zeros(height, width, length(Time), 'uint8');
     for iTime = 1:length(Time)
@@ -1000,7 +1002,8 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
             iChannel = selectedChannels;
         else
             [tmp,I,J] = intersect(selectedChannels, figures_struct(iFile).FigureObject.SelectedChannels);
-            iChannel = J';
+%             iChannel = J';
+%             set(figures_struct(iFile).FigureObject.hFigure, 'Resize', 1);
 %             plot(figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel,2),'g.')
 %             for i = 1:length(iChannel)
 %                 text(figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel(i),1), figures_struct(iFile).FigureObject.Handles.MarkersLocs(iChannel(i),2),ChannelMat.Channel(selectedChannels(i)).Name)
@@ -1016,23 +1019,38 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 %             if (size(GlobalData.DataSet(iFile).Figure.Handles.Wmat,1) == length(DataToPlot))
             if (size(figures_struct(iFile).FigureObject.Handles.Wmat,2) == length(DataToPlot)) % Topomap checks for the other dimension, it might be wrong
 %                 DataToPlot = full(GlobalData.DataSet(iFile).Figure.Handles.Wmat * DataToPlot);
-                DataToPlot = full(figures_struct(iFile).FigureObject.Handles.Wmat * DataToPlot);
+                DataToPlot_full = full(figures_struct(iFile).FigureObject.Handles.Wmat * DataToPlot);
             % Find first corresponding indices
             else
 %                 [tmp,I,J] = intersect(selectedChannels, GlobalData.DataSet(iDS).Figure(iFig).SelectedChannels);
 %                 [tmp,I,J] = intersect(selectedChannels, GlobalData.DataSet(iFile).Figure.SelectedChannels);
                 [tmp,I,J] = intersect(selectedChannels, figures_struct(iFile).FigureObject.SelectedChannels);
 %                 DataToPlot = full(GlobalData.DataSet(iFile).Figure.Handles.Wmat(:,J) * DataToPlot(I));
+                DataToPlot_full = full(figures_struct(iFile).FigureObject.Handles.Wmat(:,J) * DataToPlot(I));
+            end
+            
+            % Hack to get the desired value - for some reason it does not
+            % work on MEG datasets with Gaussian distribution -It also need to be deactivated when a subselection of channels if defined- TODO
+            if isDerivative && length(selectedChannels)>5
                 DataToPlot = full(figures_struct(iFile).FigureObject.Handles.Wmat(:,J) * DataToPlot(I));
+                DataToPlot_full = ones(size(DataToPlot)) .* F(selectedChannels(1),iTime);
             end
         end         
 
 
 %         set(GlobalData.DataSet(iFile).Figure.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
-        set(figures_struct(iFile).FigureObject.Handles.hSurf, 'FaceVertexCData', DataToPlot, 'EdgeColor', 'none');
+        set(figures_struct(iFile).FigureObject.Handles.hSurf, 'FaceVertexCData', DataToPlot_full, 'EdgeColor', 'none');
 
-        % Check exporting image
+        % Check exporting image    
         img = getframe(figures_struct(iFile).FigureObject.hFigure.Children);
+        [height, width,~] = size(img.cdata);
+
+        if height~=38 || width~=36
+           disp(['Forcing resize on the image of trial: ' num2str(iFile) ])
+           img.cdata = imresize(img.cdata, [38 36]);
+        end
+        img.cdata = img.cdata(5:36,3:34,:);
+        
         img_gray= rgb2gray(img.cdata);
         
         if isDerivative && all(DataToPlot==0) % This is done since even if all channels are 0, there is still a gray image of the topography displayed to distringuish from the background
@@ -1140,13 +1158,13 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     
     
     y_in_pixels = size(NIFTI,1) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,1)-xlim(1))/(xlim(2)-xlim(1));
-    y_in_pixels = 1 + 0.938 * y_in_pixels;
+    y_in_pixels = 2 + 0.97 * y_in_pixels;
     
 
     
 %     x_in_pixels = pos(4) - pos(4) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
     x_in_pixels = size(NIFTI,2) - size(NIFTI,2) * (figures_struct(iFile).FigureObject.Handles.MarkersLocs(:,2)-ylim(1))/(ylim(2)-ylim(1));  % Y axis is reversed, so I subtract from pos(4)
-    x_in_pixels = 2+ 0.94*x_in_pixels;
+    x_in_pixels = 1+ 0.97*x_in_pixels;
 %     x_in_pixels =x_in_pixels;
 
     
@@ -1163,7 +1181,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     end
     
     %%
-%      disp(1)
+%     disp(1)
 %     h = figure(10);
 %     imagesc(squeeze(NIFTI(:,:,75)))
 %     colormap('gray')
@@ -1172,8 +1190,8 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
 %     plot(y_in_pixels, x_in_pixels,'*r')
 %     hold off
 
-%     
-% 
+    
+
     %% Visualize perfect circle from cropping (gets rid of interpolation edge effects)
     
 %     figure(1);
@@ -1341,7 +1359,7 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     config_struct.brainstorm.modality = sProcess.options.modality.Comment{sProcess.options.modality.Value};
     config_struct.brainstorm.event_for_ground_truth = sProcess.options.eventname.Value;
     config_struct.brainstorm.channel_drop_out = sProcess.options.channelDropOut.Value{1};
-    config_struct.brainstorm.annotations_time_window = sProcess.options.timewindow.Value{1};
+    config_struct.brainstorm.annotations_time_window = sProcess.options.timewindow_annot.Value{1};
     config_struct.brainstorm.fs = sProcess.options.fs.Value{1};
     config_struct.brainstorm.jitter = sProcess.options.jitter.Value{1};
     config_struct.brainstorm.soft_annotation_threshold = sProcess.options.annotthresh.Value{1};
@@ -1371,7 +1389,7 @@ end
 
 
 
-function F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, iAnnotation_time_edges)
+function F_derivative = gaussian_annotation_function(F_derivative, iAnnotation_channels, iAnnotation_time_edges)
     % This function returns the derivatives with a gaussian annotation.
     % instead of a hard 0,1 annotation.
     % Gaussian annotations can be used for soft training
@@ -1390,11 +1408,13 @@ function F_derivative = gaussian_annotation(F_derivative, iAnnotation_channels, 
     if isempty(iAnnotation_channels)
         gaussian_annotation = repmat(single_channel_gaussian_annotation, size(F_derivative,1), 1);
     else
-        gaussian_annotation = repmat(single_channel_gaussian_annotation, length(iAnnotation_channels), 1);
+        gaussian_annotation = zeros(size(F_derivative));
+        gaussian_annotation_selected_channels = repmat(single_channel_gaussian_annotation, length(iAnnotation_channels), 1);
+        
+        gaussian_annotation(iAnnotation_channels,:) = gaussian_annotation_selected_channels;
     end
     
     F_derivative = F_derivative + gaussian_annotation;
-    
     F_derivative(F_derivative>1) = 1;
 
 end

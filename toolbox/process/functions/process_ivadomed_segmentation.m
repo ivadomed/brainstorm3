@@ -228,12 +228,13 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
 
     
     %% Assign some values from the config file
-    sProcess.options.fs.Value             = {config_struct.brainstorm.fs, 'Hz', 0};
-    sProcess.options.modality.Comment     = {'MEG', 'EEG', 'MEG+EEG', 'fNIRS'}; % Make sure that the order of the modalities doesn't change between this function and process_ivadomed_create_dataset.m
-    sProcess.options.modality.Value       = find(ismember(sProcess.options.modality.Comment, config_struct.brainstorm.modality));  
-    sProcess.options.bidsFolders.Comment  = {'Normal', 'Separate runs/sessions as different subjects', 'Separate each trial as different subjects'}; % Same
-    sProcess.options.bidsFolders.Value    = find(ismember(sProcess.options.bidsFolders.Comment, config_struct.brainstorm.bids_folder_creation_mode));  
-    sProcess.options.channelDropOut.Value = {config_struct.brainstorm.channel_drop_out, 'channels', 0};
+    sProcess.options.fs.Value               = {config_struct.brainstorm.fs, 'Hz', 0};
+    sProcess.options.timewindow_annot.Value = {config_struct.brainstorm.annotations_time_window, 'ms', []};
+    sProcess.options.modality.Comment       = {'MEG', 'EEG', 'MEG+EEG', 'fNIRS'}; % Make sure that the order of the modalities doesn't change between this function and process_ivadomed_create_dataset.m
+    sProcess.options.modality.Value         = find(ismember(sProcess.options.modality.Comment, config_struct.brainstorm.modality));  
+    sProcess.options.bidsFolders.Comment    = {'Normal', 'Separate runs/sessions as different subjects', 'Separate each trial as different subjects'}; % Same
+    sProcess.options.bidsFolders.Value      = find(ismember(sProcess.options.bidsFolders.Comment, config_struct.brainstorm.bids_folder_creation_mode));  
+    sProcess.options.channelDropOut.Value   = {config_struct.brainstorm.channel_drop_out, 'channels', 0};
     
     %% If the input is a raw file, segment it into "trials" with a sliding window
     % The size of the window needs to be the same as the trials used to
@@ -589,7 +590,11 @@ function dataMat = create_new_event(dataMat, detectedEvt, evtName, channelsContr
         sEvent.color = panel_record('GetNewEventColor', iEvt, events);
     end
     % Times, epochs
-    sEvent.times  = detectedEvt;
+    if ~isempty(sProcess.options.timewindow_annot.Value{1})
+        sEvent.times  = detectedEvt - (mean(sProcess.options.timewindow_annot.Value{1})); % Centers the prediction to the center of the annotation
+    else
+        sEvent.times  = detectedEvt;
+    end
     sEvent.epochs = ones(1, size(sEvent.times,2));
 
     if strcmp(sProcess.options.annotation.Comment{1}, 'Partial')
