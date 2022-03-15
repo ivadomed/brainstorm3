@@ -70,7 +70,7 @@ end
 
 %% ===== FORMAT COMMENT =====
 function Comment = FormatComment(sProcess)
-    Comment = 'Ivadomed - Create BIDS dataset';
+    Comment = 'Ivadomed - Compare prediction to ground truth';
 end
 
 

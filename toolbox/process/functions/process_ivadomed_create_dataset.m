@@ -57,7 +57,7 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.label1.Comment = '<B>BIDS conversion parameters:</B>';
     sProcess.options.label1.Type    = 'label';
     % Event name
-    sProcess.options.eventname.Comment = 'Event for ground truth';
+    sProcess.options.eventname.Comment = 'Events for ground truth (separate with commas, spaces or semicolons)';
     sProcess.options.eventname.Type    = 'text';
     sProcess.options.eventname.Value   = 'event1';
     % Event help comment
@@ -146,19 +146,19 @@ end
 %% ===== RUN =====
 function OutputFiles = Run(sProcess, sInputs, return_filenames)
 
-    % CHECK IF IVADOMED EXISTS
-    fname = bst_fullfile(bst_get('UserPluginsDir'), 'ivadomed', 'ivadomed-master', 'ivadomed', 'main.py');
-    if ~(exist(fname, 'file') == 2)
-        
-        % Check if ivadomed can be accessed from a system call
-        % in case the user installed it outside of Brainstorm
-        output = system('ivadomed -h');
-        if output~=0
-            OutputFiles = {};
-            bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
-            return
-        end
-    end
+%     % CHECK IF IVADOMED EXISTS
+%     fname = bst_fullfile(bst_get('UserPluginsDir'), 'ivadomed', 'ivadomed-master', 'ivadomed', 'main.py');
+%     if ~(exist(fname, 'file') == 2)
+%         
+%         % Check if ivadomed can be accessed from a system call
+%         % in case the user installed it outside of Brainstorm
+%         output = system('ivadomed -h');
+%         if output~=0
+%             OutputFiles = {};
+%             bst_report('Error', sProcess, sInputs, 'Ivadomed package is not accessible. Are you running Matlab through an anaconda environment that has Ivadomed installed?');
+%             return
+%         end
+%     end
     
     
     %% Close all existing figures
@@ -190,9 +190,12 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
             
             % Gather all runs that are used -  THIS IS FOR BIDS DATASETS
             % ONLY - TODO
-            splits = split(sInputs(iInput).Condition, '_');
-            run = splits(contains(splits, 'run')); splitsRun = split(run,'-');
-            iRun = str2double(splitsRun{2});
+%             splits = split(sInputs(iInput).Condition, '_');
+%             run = splits(contains(splits, 'run')); splitsRun = split(run,'-');
+%             iRun = str2double(splitsRun{2});
+
+                    run = 1;
+                    iRun = 1;
 
             runs{iInput} = num2str(iRun);
 
@@ -200,25 +203,25 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                 if length(sProcess.options.timewindow_annot.Value{1})<2 || isempty(sProcess.options.timewindow_annot.Value{1}) || ...
                         sProcess.options.timewindow_annot.Value{1}(1)<Time(1) || sProcess.options.timewindow_annot.Value{1}(2)>Time(end)
                     inputs_to_remove(iInput) = true;
-                    bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
+                    bst_report('Warning', sProcess, sInputs(iInput), ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment  ' . Ignoring this trial']);
                 end
             else
                 if isfield(events, 'label')
-                    [isSelectedEventPresent, index] = ismember(sProcess.options.eventname.Value, {events.label});
+                    [areSelectedEventsPresent, indices] = ismember(strsplit(sProcess.options.eventname.Value, {' ', ',', ';'}), {events.label});
                 else
-                    isSelectedEventPresent = false;
+                    areSelectedEventsPresent = false;
                 end
 
-                if ~isSelectedEventPresent
+                if ~any(areSelectedEventsPresent)
                     inputs_to_remove(iInput) = true;
-                    bst_report('Warning', sProcess, sInputs, ['The selected event does not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
+                    bst_report('Warning', sProcess, sInputs(1), ['The selected events do not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
                 else
 %                     % TODO - THIS IS WRONG - IT SHOULD BE REJECTED IF ALL ANNOTATIONS ARE OUT OF BOUNDS, NOT JUST THE FIRST AND LAST
-                    if Time(1) > sProcess.options.timewindow_annot.Value{1}(1) + events(index).times(1) || Time(end) < events(index).times(end) + sProcess.options.timewindow_annot.Value{1}(2)
-                        inputs_to_remove(iInput) = true;
-                        bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
-                    end
-%                     continue
+%                     if Time(1) > sProcess.options.timewindow_annot.Value{1}(1) + events(indices).times(1) || Time(end) < events(indices).times(end) + sProcess.options.timewindow_annot.Value{1}(2)
+%                         inputs_to_remove(iInput) = true;
+%                         bst_report('Warning', sProcess, sInputs, ['The time window selected for annotation is not within the Time segment of trial: ' dataMat.Comment ' . Ignoring this trial']);                    
+%                     end
+                    continue
 
                 end
             end
@@ -280,9 +283,9 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     
         
     if isempty(sProcess.options.eventname.Value)
-        annotation = 'centered';
+        annotation = {'centered'};
     else
-        annotation = sProcess.options.eventname.Value;
+        annotation = str_remove_spec_chars(sProcess.options.eventname.Value);
     end
                    
     % Hack to accommodate ivadomed derivative selection:
@@ -366,14 +369,14 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         
             if sProcess.options.bidsFolders.Value==1
                 % Images
-                info_trials(iInput).OutputMriFile      = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
-                info_trials(iInput).OutputChannelsFile = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFile    = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['times_' trial{iTrial} '.csv']);
+                info_trials(iInput).OutputMriFile{iTrial} = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
+                info_trials(iInput).OutputChannelsFile    = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
+                info_trials(iInput).OutputTimesFile       = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['times_' trial{iTrial} '.csv']);
 
                 % Derivatives
-                info_trials(iInput).OutputMriFileDerivative      = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '_' annotation '.nii']);
-                info_trials(iInput).OutputChannelsFileDerivative = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFileDerivative    = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['times_' trial{1} '.csv']);
+                info_trials(iInput).OutputMriFileDerivative{iTrial} = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '_' annotation '.nii']);
+                info_trials(iInput).OutputChannelsFileDerivative    = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
+                info_trials(iInput).OutputTimesFileDerivative       = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['times_' trial{1} '.csv']);
 
                 if iInput==1
                     txt = ['"' trial{iTrial} '"'];
@@ -389,9 +392,9 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                 info_trials(iInput).OutputTimesFile       = bst_fullfile(['sub-' subject], 'anat', ['times_' trial{iTrial} '.csv']);
 
                 % Derivatives
-                info_trials(iInput).OutputMriFileDerivative{iTrial}   = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '_' annotation '.nii']);
-                info_trials(iInput).OutputChannelsFileDerivative      = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFileDerivative = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['times_' trial{1} '.csv']);
+                info_trials(iInput).OutputMriFileDerivative{iTrial} = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '_' annotation '.nii']);
+                info_trials(iInput).OutputChannelsFileDerivative    = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', 'channels.csv');
+                info_trials(iInput).OutputTimesFileDerivative       = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['times_' trial{1} '.csv']);
                 
                 if iInput==1
                     txt = ['"' trial{iTrial} '"'];
@@ -519,10 +522,10 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         if ismac
             output=1; % NOT TESTED ON MAC YET -TODO
         elseif isunix
-            output = system('/home/nas/anaconda3/envs/ivadomed/bin/fsleyes -h');
+            output = system('fsleyes -h');
             OutputMriFile = bst_fullfile(info_trials(1).parentPath, info_trials(1).OutputMriFile{1});
             OutputMriFileDerivative = bst_fullfile(info_trials(1).parentPath, info_trials(1).OutputMriFileDerivative{1});
-            command_to_run = ['/home/nas/anaconda3/envs/ivadomed/bin/fsleyes ' OutputMriFile '.gz -cm render3 ' OutputMriFileDerivative '.gz -cm green --alpha 60 &' ];
+            command_to_run = ['fsleyes ' OutputMriFile '.gz -cm render3 ' OutputMriFileDerivative '.gz -cm green --alpha 60 &' ];
         elseif ispc
             output=1; % NOT TESTED ON WINDOWS YET -TODO
         else
@@ -552,15 +555,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 %         
 %   [DataToPlot, Time, selChan, overlayLabels, dispNames, StatThreshUnder, StatThreshOver] = GetFigureData(iDS, iFig, 0);
 
-    % TODO
-    disp('DOES The colormap need to be GRAY???') % ANSWER: YES
-        
-   
         %% ADDING TEST FOR PARTIAL ANNOTATION
-        
-        
-        
-        
         
         
         fake_partial_annotation = 0;
@@ -760,7 +755,6 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
             else
                 iAllSelectedEvents = find(ismember({single_info_trial.dataMat.Events.label}, strsplit(sProcess.options.eventname.Value,{',',' '})));
             end
-            annotationValue = 0;
 
             % Make a distinction between trials that will be used as baselines
             % (no-annotation - we are just keeping a black NIFTI)
@@ -768,7 +762,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 
                 if ~isempty(iAllSelectedEvents)  % Selected event
                     for iSelectedEvent = iAllSelectedEvents
-                        annotationValue = annotationValue+1;
+                        annotationValue = 1;
                         isExtended = size(single_info_trial.dataMat.Events(iSelectedEvent).times,1)>1;                                       
 
                         if isExtended
@@ -822,11 +816,17 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
                             end
                         end
                     end
-                else  % No event selected - ANNOTATE BASED ON THE SELECTED TIME WINDOW WITHIN THE TIME IN TRIAL
-                    annotationValue = annotationValue+1;
+                else
+                    % No event selected - ANNOTATE BASED ON THE SELECTED TIME WINDOW WITHIN THE TIME IN TRIAL
+                    annotationValue = 1;
                     iAnnotation_time_edges  = bst_closest(sProcess.options.timewindow_annot.Value{1}, single_info_trial.dataMat.Time);
-                    % Annotate the entire slice
-                    F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                    
+                    if sProcess.options.gaussian_annot.Value
+                    	F_derivative = gaussian_annotation_function(F_derivative, [], iAnnotation_time_edges);
+                    else 
+                        % Annotate the entire slice
+                        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                    end
                 end
 
             else
@@ -976,8 +976,16 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
     [height,width,~] = size(img.cdata);
     
     if height~=38 || width~=36
-       disp(['Forcing resize on the image of trial: ' num2str(iFile) ])
-       img.cdata = imresize(img.cdata, [38, 36]);
+        
+        disp(['Forcing resize on the image of trial: ' num2str(iFile) ])
+       
+        AxesHandle = figures_struct(iFile).FigureObject.hFigure.Children.Children;
+        pause(.05);
+        set(figures_struct(iFile).FigureObject.hFigure.Children, 'Units', 'pixels', 'Position', [10, 10, 38, 36]);  % Even though I set position [32,32] the getframe returns a 32x32. Leaving it at 34x32 here
+       
+%         bst_report('Warning', sProcess, sInputs, ['Forcing window resizing on trial: ' dataMat.Comment  '.']);
+
+        img.cdata = imresize(img.cdata, [38, 36]);
     end
     img.cdata = img.cdata(5:36,3:34,:);
     
@@ -1053,7 +1061,7 @@ function [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F, Time
         
         img_gray= rgb2gray(img.cdata);
         
-        if isDerivative && all(DataToPlot==0) % This is done since even if all channels are 0, there is still a gray image of the topography displayed to distringuish from the background
+        if isDerivative && all(DataToPlot==0) % This is done since even if all channels are 0, there is still a gray image of the topography displayed to distinguish from the background
             img_gray(img_gray<170)=0;
         elseif isDerivative
             
@@ -1349,7 +1357,7 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     config_struct.loader_parameters.contrast_params.training_validation = contrast_params_cell;
     config_struct.loader_parameters.contrast_params.testing = contrast_params_cell;
     
-    config_struct.model_name = [modality '_model'];
+    config_struct.model_name = [modality '_' annotation '_model' ];
     config_struct.loader_parameters.target_suffix = {['_' annotation]};
     
     config_struct.gpu_ids = {0};
@@ -1379,6 +1387,7 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     
     % Save back to json
     txt = jsonencode(config_struct, 'PrettyPrint', true);
+%     txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
     
     new_configFile = bst_fullfile(parentPath, 'config_for_training.json');
     fid = fopen(new_configFile, 'w');
