@@ -220,7 +220,8 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     config_struct.gpu_ids = {sProcess.options.gpu.Value{1}};
     
     % Save back to json
-    txt = jsonencode(config_struct, 'PrettyPrint', true);
+%     txt = jsonencode(config_struct, 'PrettyPrint', true);
+    txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
     
     fid = fopen(configFile, 'w');
     fwrite(fid, txt);
@@ -410,7 +411,8 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         [a,file_basename,c] = bst_fileparts(b);
 
         % Grab event annotation suffix (e.g. "centered") from json file
-        segmentationMasks{iInput} = bst_fullfile(ivadomedOutputFolder, 'pred_masks', [file_basename, config_struct.loader_parameters.target_suffix{1}, '_pred.nii.gz']);
+%         segmentationMasks{iInput} = bst_fullfile(ivadomedOutputFolder, 'pred_masks', [file_basename, config_struct.loader_parameters.target_suffix{1}, '_pred.nii.gz']);
+        segmentationMasks{iInput} = bst_fullfile(ivadomedOutputFolder, 'pred_masks', [file_basename, '_class-0', '_pred.nii.gz']);
     end
     
     %% Converter from masks to Brainstorm events
@@ -488,7 +490,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                 event_timevector = [event_timevector Time(iSample)];
                 annotated_Channels_on_Sample = find(F_segmented(:,iSample));
                 
-                if strcmp(sProcess.options.annotation.Comment{1}, 'Partial')
+                if strcmp(sProcess.options.annotation.Comment{sProcess.options.annotation.Value}, 'Partial') && ~isempty(annotated_Channels_on_Sample)
                     channelsContributingToAnnotation = unique([channelsContributingToAnnotation  {ChannelMat.Channel(annotated_Channels_on_Sample).Name}]);
                 else
                     channelsContributingToAnnotation = [];
@@ -597,7 +599,7 @@ function dataMat = create_new_event(dataMat, detectedEvt, evtName, channelsContr
     end
     sEvent.epochs = ones(1, size(sEvent.times,2));
 
-    if strcmp(sProcess.options.annotation.Comment{1}, 'Partial')
+    if strcmp(sProcess.options.annotation.Comment{sProcess.options.annotation.Value}, 'Partial')
         sEvent.channels = cell(1, size(sEvent.times, 2));
         for iEvent = 1:size(sEvent.times, 2)
             sEvent.channels{iEvent} = channelsContributingToAnnotation;

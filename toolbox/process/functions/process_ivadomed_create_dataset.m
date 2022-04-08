@@ -1386,8 +1386,8 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     
     
     % Save back to json
-    txt = jsonencode(config_struct, 'PrettyPrint', true);
-%     txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
+%     txt = jsonencode(config_struct, 'PrettyPrint', true);
+    txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
     
     new_configFile = bst_fullfile(parentPath, 'config_for_training.json');
     fid = fopen(new_configFile, 'w');
