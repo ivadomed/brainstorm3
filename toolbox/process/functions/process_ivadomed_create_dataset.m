@@ -1383,16 +1383,24 @@ function modify_config_json(parentPath, modality, annotation, contrast_params_tx
     % Add file history
     config_struct.brainstorm.file_history = history_log;
 
-    
-    
     % Save back to json
-%     txt = jsonencode(config_struct, 'PrettyPrint', true);
-    txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
+    isProspero = 0;  % Prospero is the workstation at McGill. Pretty print fails on it.
+                     % Adding pretty print through a python script
+    try
+        txt = jsonencode(config_struct, 'PrettyPrint', true);
+    catch
+        txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
+        isProspero = 1;
+    end
     
     new_configFile = bst_fullfile(parentPath, 'config_for_training.json');
     fid = fopen(new_configFile, 'w');
     fwrite(fid, txt);
-    fclose(fid);
+    fclose(fid);    
+    
+    if isProspero 
+        system(['python ' bst_fullfile(bst_get('BrainstormHomeDir'), 'external', 'ivadomed', 'beautify_json.py') ' -f ' new_configFile]);
+    end
     
 end
 
