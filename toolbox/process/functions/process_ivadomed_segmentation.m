@@ -109,23 +109,17 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.convert.Value  = 'segmentation';  % Other option: 'conversion'
     sProcess.options.convert.Hidden = 1;
     % BIDS subject selection
-    % Method: BIDS subject selection
+    % Method: BIDS annotation type selection
     sProcess.options.annotationLabel.Comment = '<I><FONT color="#FF0000">Whole Head annotation (all channels) or partial (annotate specific channels)</FONT></I>';
     sProcess.options.annotationLabel.Type    = 'label';
     sProcess.options.annotation.Comment = {'Whole', 'Partial'};
     sProcess.options.annotation.Type    = 'radio';
     sProcess.options.annotation.Value   = 1;
-    % GPU ID to run inference on - % this allows to allocate the percentage
-    % of channels that need to have the annotation in order to keep the
-    % annotation
+    
+    % Voting parameter for segmentation
     sProcess.options.majorityVote.Comment = 'Majority Vote Percentage of MEG/EEG channels [0,100]</FONT></I>';
     sProcess.options.majorityVote.Type    = 'value';
     sProcess.options.majorityVote.Value   = {50, [], []};
-    % Parallel processing
-    sProcess.options.paral.Comment = 'Parallel processing';
-    sProcess.options.paral.Type    = 'checkbox';
-    sProcess.options.paral.Value   = 0;
-    sProcess.options.paral.Hidden = 1;
     % Display example image in FSLeyes
     sProcess.options.dispExample.Comment = 'Open an example image/derivative on FSLeyes';
     sProcess.options.dispExample.Type    = 'checkbox';

@@ -81,8 +81,13 @@ function OutputFiles = Run(sProcess, sInputs)
     [sStudy, iStudy, iData] = bst_get('DataFile', sInputs(1).FileName);
     isRaw = strcmpi(sStudy.Data(iData).DataType, 'raw');
 
-     for iInput = 1:length(sInputs) % Link to raw files inputs
+    summary_table = struct('FileName', {}, 'TotalGTevents', {}, 'TotalAnnotatedEvents', {}, 'TruePositives', {}, 'FalsePositives', {}, 'FalseNegatives', {});
+    
+    
+    for iInput = 1:length(sInputs) % Link to raw files inputs
 
+        summary_table(iInput).FileName = sInputs(iInput).FileName;
+        
         % Read file descriptor
         DataMat = in_bst_data(sInputs(iInput).FileName);
 
@@ -94,32 +99,44 @@ function OutputFiles = Run(sProcess, sInputs)
         events = sFile.events;        
 
         % Check if both selected events exist
-         disp(1)
-         if ~all(ismember({sProcess.options.gt_eventname.Value, sProcess.options.prediction_eventname.Value}, {events.label}))
-            warning('The selected events are not present in this file. Skipping')
-         else
-             % Create confusion matrix
-             events = confusion_matrix(events, sProcess.options.gt_eventname.Value, sProcess.options.prediction_eventname.Value, sProcess.options.timewindow_annot.Value{1});
+        disp(1)
+        if ~all(ismember({sProcess.options.gt_eventname.Value, sProcess.options.prediction_eventname.Value}, {events.label}))
+           warning('The selected events are not present in this file. Skipping')
+        else
              
-             % If selected, update the link to raw file events with false
-             % positive and negative events
-             if sProcess.options.false_pos_neg.Value && isRaw
+            % Create confusion(?) matrix
+            [events, summary_table] = confusion_matrix(events, sProcess.options.gt_eventname.Value, sProcess.options.prediction_eventname.Value, sProcess.options.timewindow_annot.Value{1}, summary_table, iInput);
+             
+            % If selected, update the link to raw file events with false
+            % positive and negative events
+            if sProcess.options.false_pos_neg.Value && isRaw
                 
                 DataMat.F.events = events;
-        
                 ProtocolInfo = bst_get('ProtocolInfo');
                 bst_save(bst_fullfile(ProtocolInfo.STUDIES, sInputs(iInput).FileName), DataMat, 'v6');
-        
-             end
-         end
+
+            end
+        end
             
      end
      OutputFiles = [];
+     
+     
+     %% Display summary
+     summary_table(end+1).FileName           = 'TOTAL';
+     summary_table(end).TotalGTevents        = sum([summary_table.TotalGTevents]);
+     summary_table(end).TotalAnnotatedEvents = sum([summary_table.TotalAnnotatedEvents]);
+     summary_table(end).TruePositives        = sum([summary_table.TruePositives]);
+     summary_table(end).FalsePositives       = sum([summary_table.FalsePositives]);
+     summary_table(end).FalseNegatives       = sum([summary_table.FalseNegatives]);
+     
+     struct2table(summary_table)
+     
 end
 
 
 
-function events = confusion_matrix(events, gt_label, model_annot_label, leniency)
+function [events, summary_table] = confusion_matrix(events, gt_label, model_annot_label, leniency, summary_table, iInput)
 
     gt_times = events(find(ismember({events.label}, gt_label ))).times;
     model_times = events(find(ismember({events.label}, model_annot_label ))).times;
@@ -164,7 +181,7 @@ function events = confusion_matrix(events, gt_label, model_annot_label, leniency
     ii = 1;
     for iEvent = 1:3
         if ~isempty(temp_events(iEvent).times)
-            newEvents(ii).label      = temp_events(iEvent).label
+            newEvents(ii).label      = temp_events(iEvent).label;
             newEvents(ii).color      = temp_events(iEvent).color;
             newEvents(ii).times      = temp_events(iEvent).times;
             newEvents(ii).reactTimes = [];
@@ -176,5 +193,21 @@ function events = confusion_matrix(events, gt_label, model_annot_label, leniency
         end
     end
     
+    
+    % Before appending the new events, get rid of previous entries of true
+    % positive, false positive, false negatives events
+    detection_keywords = {'true_positives', 'false_positives', 'false_negatives'};
+    iEventsToRemove = find(ismember({events.label}, detection_keywords));
+    events(iEventsToRemove) = [];
+    
+    % Append the new events
     events = [events newEvents];
+    
+    % Update summary table
+    summary_table(iInput).TotalGTevents        = size(gt_times, 2);
+    summary_table(iInput).TotalAnnotatedEvents = size(model_times, 2);
+    summary_table(iInput).TruePositives        = size(temp_events(1).times, 2);
+    summary_table(iInput).FalsePositives       = size(temp_events(2).times, 2);
+    summary_table(iInput).FalseNegatives       = size(temp_events(3).times, 2);
+    
 end
