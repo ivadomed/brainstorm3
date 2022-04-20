@@ -117,9 +117,9 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.annotation.Value   = 1;
     
     % Voting parameter for segmentation
-    sProcess.options.majorityVote.Comment = 'Majority Vote Percentage of MEG/EEG channels [0,100]</FONT></I>';
-    sProcess.options.majorityVote.Type    = 'value';
-    sProcess.options.majorityVote.Value   = {50, [], []};
+    sProcess.options.annotation_threshold.Comment = 'Annotation threshold [0,100]</FONT></I>';
+    sProcess.options.annotation_threshold.Type    = 'value';
+    sProcess.options.annotation_threshold.Value   = {90, [], []};
     % Display example image in FSLeyes
     sProcess.options.dispExample.Comment = 'Open an example image/derivative on FSLeyes';
     sProcess.options.dispExample.Type    = 'checkbox';
@@ -463,25 +463,22 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
             
             [tmp ,indexCh] = ismember(T.ChannelNames{iChannel}, {ChannelMat.Channel.Name});
             
-            indicesTime = find(MRI.Cube(T.x_coordinates(iChannel), T.y_coordinates(iChannel), :)==255);
+            % Aplly annotation threshold
+            indicesTime = find(MRI.Cube(T.x_coordinates(iChannel), T.y_coordinates(iChannel), :) > 255 * sProcess.options.annotation_threshold.Value{1}/100);
             F_segmented(indexCh,indicesTime) = true;
         end
-        
         
         %% Now assign the event if the majority of channels indicate annotation
         % TODO - DETECTION/ANNOTATION ALGORITHM - IMPROVE
         % FOR NOW WORKS ONLY WHEN ALL CHANNELS ARE ANNOTATED - NOT JUST A FEW
         mask = false(1, size(F_segmented,2));
-        event_timevector = [];
    
-        
         channelsContributingToAnnotation = {};
                               
         for iSample = 1:size(F_segmented,2)
-            % If majority - annotate
-            if sum(F_segmented(:, iSample))>= length(T.ChannelNames) * sProcess.options.majorityVote.Value{1} / 100
+            % If annotated
+            if any(F_segmented(:,iSample))
                 mask(iSample) = true;
-                event_timevector = [event_timevector Time(iSample)];
                 annotated_Channels_on_Sample = find(F_segmented(:,iSample));
                 
                 if strcmp(sProcess.options.annotation.Comment{sProcess.options.annotation.Value}, 'Partial') && ~isempty(annotated_Channels_on_Sample)
@@ -548,9 +545,12 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         bst_save(bst_fullfile(ProtocolInfo.STUDIES, sInputs(1).FileName), dataMat, 'v6');
         
         %% Delete the created trials
-    
-        % %     % Delete trials - TODO
-    
+        [slidingWindowFolder, b, c] = bst_fileparts(NewFiles{1});
+        rmdir(slidingWindowFolder, 's')
+        
+        db_reload_conditions(iSubject);
+        
+        %% TODO - GENERALIZE TO MORE THAN ONE INPUT
         OutputFiles = {sInputs(1).FileName};
     end
 end
