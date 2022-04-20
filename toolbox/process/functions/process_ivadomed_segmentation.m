@@ -101,7 +101,7 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.eventname.Type    = 'text';
     sProcess.options.eventname.Value   = 'segmented';
     % GPU ID to run inference on
-    sProcess.options.gpu.Comment = 'GPU ID to run inference on:';
+    sProcess.options.gpu.Comment = 'GPU ID to run inference on <FONT color="#FF0000 If no GPU is detected, it will run on the CPU">:';
     sProcess.options.gpu.Type    = 'value';
     sProcess.options.gpu.Value   = {0, [], 0};
     % Conversion of both trials and their derivatives
@@ -120,6 +120,11 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.annotation_threshold.Comment = 'Annotation threshold [0,100]</FONT></I>';
     sProcess.options.annotation_threshold.Type    = 'value';
     sProcess.options.annotation_threshold.Value   = {90, [], []};
+    
+    % Deep learning model
+    sProcess.options.label10.Comment = 'A higher value will enable differentiation between adjacent events';
+    sProcess.options.label10.Type    = 'label';
+        
     % Display example image in FSLeyes
     sProcess.options.dispExample.Comment = 'Open an example image/derivative on FSLeyes';
     sProcess.options.dispExample.Type    = 'checkbox';
