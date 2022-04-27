@@ -39,6 +39,15 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.OutputTypes = {'raw', 'data'};
     sProcess.nInputs     = 1;
     sProcess.nMinFiles   = 1;
+    % Recordings time window
+    sProcess.options.triallength.Comment = 'Trial length:';
+    sProcess.options.triallength.Type    = 'value';
+    sProcess.options.triallength.Value   = {5, 'sec', 0};
+    % Sliding window 
+    sProcess.options.slidingTrialOverlap.Comment = 'Sliding trials overlap';
+    sProcess.options.slidingTrialOverlap.Type    = 'value';
+    sProcess.options.slidingTrialOverlap.Value   = {0, '%', 0};
+    
 end
 
 
@@ -73,10 +82,10 @@ function OutputFiles = Run(sProcess, sInputs)
         %% New events every 5 seconds - this will be used to create new trials
         new5SecondsEvents = struct;
         
-        seconds_5 = 0:5:2000;  % It doesn't matter that the events are longer than the acquisition system
-        
+        seconds_5 = 0:sProcess.options.triallength.Value{1}*(100-sProcess.options.slidingTrialOverlap.Value{1})/100:2000;  % It doesn't matter that the events are longer than the acquisition system
+        event_name = sprintf('spaced_out_%d', sProcess.options.triallength.Value{1});
         ii = 1;
-        new5SecondsEvents(ii).label      = 'spaced_out_5';
+        new5SecondsEvents(ii).label      = event_name;
         new5SecondsEvents(ii).color      = rand(1,3);
         new5SecondsEvents(ii).times      = seconds_5;
         new5SecondsEvents(ii).reactTimes = [];
@@ -138,7 +147,7 @@ function OutputFiles = Run(sProcess, sInputs)
         ied_newEvents = ied_newEvents(iEntries_to_keep);
         
         % Concatenate with the spaced_out_5
-        if ~ismember('spaced_out_5', {events.label})
+        if ~ismember(event_name, {events.label})
             events = [events new5SecondsEvents ied_newEvents];
         else
             events = [events ied_newEvents];
@@ -147,7 +156,7 @@ function OutputFiles = Run(sProcess, sInputs)
         
         %% Some converted files accidentally concatenated the spaced_out_5
         % events twice. Correct this here
-        iEvents = find(ismember({events.label}, 'spaced_out_5'));
+        iEvents = find(ismember({events.label}, event_name));
         
         if length(iEvents)>1
             events(iEvents(2:end)) = [];
