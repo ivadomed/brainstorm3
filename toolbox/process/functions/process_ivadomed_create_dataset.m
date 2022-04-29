@@ -96,16 +96,26 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     sProcess.options.whole_partial_annotation.Comment = {'Whole', 'Partial'};
     sProcess.options.whole_partial_annotation.Type    = 'radio';
     sProcess.options.whole_partial_annotation.Value   = 1;
-     % Include trials without annotations to the dataset?
-    sProcess.options.baselines.Comment = 'Include trials that dont have selected event(s) <I><FONT color="#777777"> (Annotation NIFTIs are zeroed)</FONT></I>';
-    sProcess.options.baselines.Type    = 'checkbox';
-    sProcess.options.baselines.Value   = 0;
+    
     % Use gaussian soft annotation
     sProcess.options.gaussian_annot.Comment = 'Gaussian annotation';
     sProcess.options.gaussian_annot.Type    = 'checkbox';
     sProcess.options.gaussian_annot.Value   = 0;
     sProcess.options.gaussian_annot_help.Comment = '<I><FONT color="#777777">The annotation within the annotation window will be a gaussian function</FONT></I>';
     sProcess.options.gaussian_annot_help.Type = 'label';
+    
+    % Trials selection
+    sProcess.options.label4.Comment = '<BR><B>Trials selection:</B>';
+    sProcess.options.label4.Type    = 'label';
+    % Number of IED segments selected
+    sProcess.options.segment_number.Comment = 'Resampling rate <I><FONT color="#777777">(empty for no resampling)</FONT></I>';
+    sProcess.options.segment_number.Type    = 'value';
+    sProcess.options.segment_number.Value   = {100, 'segments', 0};
+    % Include trials without annotations to the dataset?
+    sProcess.options.baselines.Comment = 'Include trials that dont have selected event(s) <I><FONT color="#777777"> (Annotation NIFTIs are zeroed)</FONT></I>';
+    sProcess.options.baselines.Type    = 'checkbox';
+    sProcess.options.baselines.Value   = 0;
+    
     % BIDS
     sProcess.options.label1.Comment = '<BR><B>BIDS conversion parameters:</B>';
     sProcess.options.label1.Type    = 'label';
@@ -175,12 +185,17 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     %% Modality selected
     modality = sProcess.options.modality.Comment{sProcess.options.modality.Value};
     
+    
     %% Do some checks on the parameters
     
     if isempty(sProcess.options.eventname.Value)
         error('No event label has been selected to be used as ground truth')
     end
     
+    subjects_inputs = string([]);
+    for iInput = 1:length(sInputs)
+        subjects_inputs(iInput) = lower(str_remove_spec_chars(sInputs(iInput).SubjectName));
+    end
     
     if strcmp(sProcess.options.convert.Value, 'conversion')
     
@@ -200,7 +215,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                 areSelectedEventsPresent = false;
             end
 
-            if ~any(areSelectedEventsPresent) && ~sProcess.options.baselines.Value
+            if ~any(areSelectedEventsPresent)
                 inputs_to_remove(iInput) = true;
                 bst_report('Warning', sProcess, sInputs(1), ['The selected events do not exist within trial: ' dataMat.Comment ' . Ignoring this trial']);
             else
@@ -213,7 +228,33 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
 
             end
         end
-
+        
+        subjects_name = unique(subjects_inputs);
+        for isub = 1:length(subjects_name)
+            
+            sub_inputs = find(subjects_inputs == subjects_name(isub));
+            inputs_to_remove_sub = inputs_to_remove(sub_inputs);
+            input_event = find(inputs_to_remove_sub == false);
+            input_no_event = find(inputs_to_remove_sub == true);
+            sub_inputs_event = sub_inputs(input_event);
+            sub_inputs_no_event = sub_inputs(input_no_event);
+            n_event = length(input_event);
+       
+            if n_event > sProcess.options.segment_number.Value{1}
+                randomIndex_to_remove = randperm(n_event, n_event - sProcess.options.segment_number.Value{1});
+                inputs_to_remove(sub_inputs_event(randomIndex_to_remove)) = true;
+            end
+            
+            if sProcess.options.baselines.Value
+                n_no_event = length(input_no_event);
+                n_no_event_to_add = min(n_event, sProcess.options.segment_number.Value{1});
+                randomIndex_to_add = randperm(n_no_event, n_no_event_to_add);
+                inputs_to_remove(sub_inputs_no_event(randomIndex_to_add)) = false;
+            end
+                
+        end
+        
+%         
         % The following works on Matlab R2021a - I think older versions
         % need another command to squeeze the empty structure entries - TODO
         sInputs(inputs_to_remove) = [];
@@ -225,7 +266,6 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         OutputFiles = {};
         return
     end
-    
     %% Gather filenames for all files here - This shouldn't create a memory issue
     % Reason why all of them are imported here is that in_bst doesn't like
     % to be parallelized (as far as I checked), so can't call it within 
@@ -319,7 +359,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         info_trials(iInput).FileName = sInputs(iInput).FileName;
         info_trials(iInput).subject = lower(str_remove_spec_chars(sInputs(iInput).SubjectName));
         info_trials(iInput).session = lower(str_remove_spec_chars(sInputs(iInput).Condition));
-        
+        subjects_inputs(iInput) = lower(str_remove_spec_chars(sInputs(iInput).SubjectName));
         % The trial # needs special attention
         splitComment = split(sInputs(iInput).Comment,{'(#',')'});
         comment = lower(str_remove_spec_chars(splitComment{1}));
