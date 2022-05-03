@@ -198,7 +198,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
                        'IvadomedNiftiFiles', ...
                        [protocol.Comment '-meta-segmentation']);
     
-    %% CHANGE THE CONFIG FILE TO RUN LOCALLY
+    %% CHANGE THE CONFIG FILE TO RUN LOCALLY 
     
     % Grab the config.json file that was used and assign the gpu that the
     % user selected
@@ -220,12 +220,27 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     
     % Save back to json
 %     txt = jsonencode(config_struct, 'PrettyPrint', true);
-    txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
+%     txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
+    
+    % Save back to json
+    isProspero = 0;  % Prospero is the workstation at McGill. Pretty print fails on it.
+                     % Adding pretty print through a python script
+    try
+        txt = jsonencode(config_struct, 'PrettyPrint', true);
+    catch
+        txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
+        isProspero = 1;
+    end
     
     fid = fopen(configFile, 'w');
     fwrite(fid, txt);
     fclose(fid);
-
+    
+    % Pretty print is done on Prospero through a python script.
+    % Might change the order of the fields (although I set json.dumps: sort_keys=False)
+    if isProspero 
+        output = system(['python ' bst_fullfile(bst_get('BrainstormHomeDir'), 'external', 'ivadomed', 'beautify_json.py') ' -f ' configFile]);
+    end
     
     %% Assign some values from the config file
     sProcess.options.fs.Value               = {config_struct.brainstorm.fs, 'Hz', 0};
