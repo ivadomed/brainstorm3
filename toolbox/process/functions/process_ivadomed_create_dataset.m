@@ -343,7 +343,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
     end
                    
     channels_times_path = [parentPath '-meta'];
-                   
+    channels_times_path_store = [parentPathStore '-meta'];
     % Differentiate simple conversion and segmentation paths
     if strcmp(sProcess.options.convert.Value, 'segmentation')
         channels_times_path = [channels_times_path '-segmentation'];
@@ -426,6 +426,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         info_trials(iInput).parentPath = parentPath;
         info_trials(iInput).parentPathStore = parentPathStore;
         info_trials(iInput).channels_times_path = channels_times_path;
+        info_trials(iInput).channels_times_path_store = channels_times_path_store;
         
         
         %% Gather output filenames
@@ -434,12 +435,15 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         trial   = info_trials(iInput).trial;
         
         for iTrial = 1:length(trial)
-            info_trials(iInput).OutputMriFileStore{iTrial} = bst_fullfile(['dropout_' num2str(sProcess.options.channelDropOut.Value{1}) '-Jitter_' num2str(sProcess.options.jitter.Value{1}) '-fs_' num2str(sProcess.options.fs.Value{1}) '-whole_partial_' num2str(sProcess.options.whole_partial_annotation.Value)],['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
+            info_trials(iInput).OutputMriFileStore{iTrial}           = bst_fullfile(['dropout_' num2str(sProcess.options.channelDropOut.Value{1}) '-Jitter_' num2str(sProcess.options.jitter.Value{1}) '-fs_' num2str(sProcess.options.fs.Value{1}) '-whole_partial_' num2str(sProcess.options.whole_partial_annotation.Value)],['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
+            info_trials(iInput).OutputMriFileDerivativeStore{iTrial} = bst_fullfile(['dropout_' num2str(sProcess.options.channelDropOut.Value{1}) '-Jitter_' num2str(sProcess.options.jitter.Value{1}) '-fs_' num2str(sProcess.options.fs.Value{1}) '-whole_partial_' num2str(sProcess.options.whole_partial_annotation.Value)],['derivatives'],['sub-' subject '_ses-' session '_' trial{iTrial} '_' annotation '.nii']);
+            info_trials(iInput).OutputTimesFileStore                 = bst_fullfile(['dropout_' num2str(sProcess.options.channelDropOut.Value{1}) '-Jitter_' num2str(sProcess.options.jitter.Value{1}) '-fs_' num2str(sProcess.options.fs.Value{1}) '-whole_partial_' num2str(sProcess.options.whole_partial_annotation.Value)],['times_sub-' subject '_ses-' session '_' trial{1} '.csv']);
+
             if sProcess.options.bidsFolders.Value==1
                 % Images
                 info_trials(iInput).OutputMriFile{iTrial} = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
                 info_trials(iInput).OutputChannelsFile    = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFile       = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['times_' trial{iTrial} '.csv']);
+                info_trials(iInput).OutputTimesFile       = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['times_sub-' subject '_ses-' session '_' trial{1} '.csv']);
 
                 % Derivatives
                 info_trials(iInput).OutputMriFileDerivative{iTrial} = bst_fullfile('derivatives', 'labels', ['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '_' annotation '.nii']);
@@ -454,15 +458,15 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                 
             elseif sProcess.options.bidsFolders.Value==2
                 % Images
-                subject = [subject session];
-                info_trials(iInput).OutputMriFile{iTrial} = bst_fullfile(['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '.nii']);
-                info_trials(iInput).OutputChannelsFile    = bst_fullfile(['sub-' subject], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFile       = bst_fullfile(['sub-' subject], 'anat', ['times_' trial{iTrial} '.csv']);
+                subject_new = [subject session];
+                info_trials(iInput).OutputMriFile{iTrial} = bst_fullfile(['sub-' subject_new], 'anat', ['sub-' subject '_' trial{iTrial} '.nii']);
+                info_trials(iInput).OutputChannelsFile    = bst_fullfile(['sub-' subject_new], 'anat', 'channels.csv');
+                info_trials(iInput).OutputTimesFile       = bst_fullfile(['sub-' subject_new], 'anat', ['times_sub-' subject '_ses-' session '_' trial{1} '.csv']);
 
                 % Derivatives
-                info_trials(iInput).OutputMriFileDerivative{iTrial} = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['sub-' subject '_' trial{iTrial} '_' annotation '.nii']);
-                info_trials(iInput).OutputChannelsFileDerivative    = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFileDerivative       = bst_fullfile('derivatives', 'labels', ['sub-' subject], 'anat', ['times_' trial{1} '.csv']);
+                info_trials(iInput).OutputMriFileDerivative{iTrial} = bst_fullfile('derivatives', 'labels', ['sub-' subject_new], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '_' annotation '.nii']);
+                info_trials(iInput).OutputChannelsFileDerivative    = bst_fullfile('derivatives', 'labels', ['sub-' subject_new], 'anat', 'channels.csv');
+                info_trials(iInput).OutputTimesFileDerivative       = bst_fullfile('derivatives', 'labels', ['sub-' subject_new], 'anat', ['times_' trial{1} '.csv']);
                 
                 if iInput==1
                     txt = ['"' trial{iTrial} '"'];
@@ -480,10 +484,10 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                 info_trials(iInput).subject            = subject_new;
                 info_trials(iInput).OutputMriFile{iTrial}      = bst_fullfile(['sub-' subject_new], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
                 info_trials(iInput).OutputChannelsFile = bst_fullfile(['sub-' subject_new], 'anat', 'channels.csv');
-                info_trials(iInput).OutputTimesFile    = bst_fullfile(['sub-' subject_new], 'anat', ['times_' trial{1} '.csv']);
+                info_trials(iInput).OutputTimesFile    = bst_fullfile(['sub-' subject_new], 'anat', ['times_sub-' subject '_ses-' session '_' trial{1} '.csv']);
 
                 % Derivatives
-                info_trials(iInput).OutputMriFileDerivative{iTrial}   = bst_fullfile('derivatives', 'labels', ['sub-' subject_new], 'anat', ['sub-' subject_new '_' trial{iTrial} '_' annotation '.nii']);
+                info_trials(iInput).OutputMriFileDerivative{iTrial}   = bst_fullfile('derivatives', 'labels', ['sub-' subject_new], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '_' annotation '.nii']);
                 info_trials(iInput).OutputChannelsFileDerivative      = bst_fullfile('derivatives', 'labels', ['sub-' subject_new], 'anat', 'channels.csv');
                 info_trials(iInput).OutputTimesFileDerivative{iTrial} = bst_fullfile('derivatives', 'labels', ['sub-' subject_new], 'anat', ['times_' trial{1} '.csv']);
 
@@ -539,14 +543,20 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
             disp(['Trial: ' num2str(iFile) '/' num2str(length(info_trials))])
             
             % Don't recompute if it already exists (might want to remove that - TODO)
-            if ~(exist(bst_fullfile(info_trials(iFile).parentPathStore, [info_trials(iFile).OutputMriFileStore{1} '.gz']), 'file') == 2)
-                [filenames(iFile), subjects(iFile)] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
-            else
-                for iModality = 1:length(modality)
-                    subjects(iFile) = {info_trials(iFile).subject};
-                end
-                copyfile(bst_fullfile(info_trials(iFile).parentPathStore, [info_trials(iFile).OutputMriFileStore{1} '.gz']), bst_fullfile(info_trials(iFile).parentPath, [info_trials(iFile).OutputMriFile{1} '.gz']));
-            end
+%             if ~(exist(bst_fullfile(info_trials(iFile).parentPathStore, [info_trials(iFile).OutputMriFileStore{1} '.gz']), 'file') == 2)
+            [filenames(iFile), subjects(iFile)] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
+%             else
+%                 for iModality = 1:length(modality)
+%                     subjects(iFile) = {info_trials(iFile).subject};
+%                 end
+%                 % Create the output folder first
+%                 OutputMriFile_full = bst_fullfile(info_trials(iFile).parentPath, [info_trials(iFile).OutputMriFile{1} '.gz'])
+%                 [filepath,name,ext] = fileparts(OutputMriFile_full);
+%                 if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
+%                     mkdir(bst_fileparts(OutputMriFile_full))
+%                 end   
+%                 copyfile(bst_fullfile(info_trials(iFile).parentPathStore, [info_trials(iFile).OutputMriFileStore{1} '.gz']), OutputMriFile_full);
+%             end
             
             bst_progress('inc', 1);
         end
@@ -638,8 +648,6 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
     
         subject{iModality,1} = single_info_trial.subject;
 
-        figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct, modality{iModality});
-
         % Select the appropriate sensors
         nElectrodes = 0;
         selectedChannels = [];
@@ -664,130 +672,167 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
             selectedChannels = selectedChannels(~ismember(selectedChannels,iChannelsToDropout));
         end
         
-        %% Gather the topography slices to a single 3d matrix
-        % Here the time dimension is the 3rd dimension
-        [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 0, sProcess);
-    %     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
+        if ~(exist(bst_fullfile(single_info_trial.parentPathStore, [single_info_trial.OutputMriFileStore{1} '.gz']), 'file') == 2)
+            
+            figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct, modality{iModality});
 
-        %% Get the output filename
+            %% Gather the topography slices to a single 3d matrix
+            % Here the time dimension is the 3rd dimension
+            [NIFTI, channels_pixel_coordinates] = channelMatrix2pixelMatrix(single_info_trial.dataMat.F, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 0, sProcess);
+        %     figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
 
-        % Substitute the voxels with the 2D slices created from the 2dlayout
-        % topography
-        single_info_trial.sMri.Cube = NIFTI;
+            %% Get the output filename
 
-        %% Export the created cube to NIFTI
-        OutputMriFile{iModality,1} = export2NIFTI(single_info_trial.sMri, single_info_trial.parentPathStore, single_info_trial.OutputMriFileStore{iModality});
+            % Substitute the voxels with the 2D slices created from the 2dlayout
+            % topography
+            single_info_trial.sMri.Cube = NIFTI;
 
-        %% Export times if doing training, and channels' coordinates if doing segmentation
-        export_Channels_Times(single_info_trial, channels_pixel_coordinates, single_info_trial.dataMat.Time', sProcess.options.convert.Value);
+            %% Export the created cube to NIFTI
+            OutputMriFile{iModality,1} = export2NIFTI(single_info_trial.sMri, single_info_trial.parentPathStore, single_info_trial.OutputMriFileStore{iModality});
+            
+            %% Export times if doing training, and channels' coordinates if doing segmentation
+            export_Channels_Times(single_info_trial, channels_pixel_coordinates, single_info_trial.dataMat.Time', sProcess.options.convert.Value);
+        
+        
+        
 
 
-        %% Create derivative
+            %% Create derivative
 
-        % The derivative will be based on a period of time that is annotated to
-        % be the Ground truth.
+            % The derivative will be based on a period of time that is annotated to
+            % be the Ground truth.
 
-        % First check that an event label was selected by the user for
-        % annotation
-        % In the case of extended event, only that period of time will be annotated
-        % In the case of a simple event, the annotation will be converted to
-        % extended based on the time-window values selected by the user,
-        % RELATIVE TO THE SIMPLE EVENT OCCURENCE e.g. [-50,50] ms around the
-        % event.
-        % In no eventlabel is selected, the annotation will be based on the time-window
-        % selected, with the TIMING MATCHING THE TRIAL-TIME VALUES
+            % First check that an event label was selected by the user for
+            % annotation
+            % In the case of extended event, only that period of time will be annotated
+            % In the case of a simple event, the annotation will be converted to
+            % extended based on the time-window values selected by the user,
+            % RELATIVE TO THE SIMPLE EVENT OCCURENCE e.g. [-50,50] ms around the
+            % event.
+            % In no eventlabel is selected, the annotation will be based on the time-window
+            % selected, with the TIMING MATCHING THE TRIAL-TIME VALUES
 
-        if strcmp(sProcess.options.convert.Value, 'conversion')  % Create the derivative Only during conversion for training
+            if strcmp(sProcess.options.convert.Value, 'conversion')  % Create the derivative Only during conversion for training
 
-            F_derivative = zeros(size(single_info_trial.dataMat.F));    
+                F_derivative = zeros(size(single_info_trial.dataMat.F));    
 
-            if isempty(single_info_trial.dataMat.Events)
-                iAllSelectedEvents = [];
-            else
-                iAllSelectedEvents = find(ismember({single_info_trial.dataMat.Events.label}, strsplit(sProcess.options.eventname.Value,{',',' '})));
-            end
+                if isempty(single_info_trial.dataMat.Events)
+                    iAllSelectedEvents = [];
+                else
+                    iAllSelectedEvents = find(ismember({single_info_trial.dataMat.Events.label}, strsplit(sProcess.options.eventname.Value,{',',' '})));
+                end
 
-            % Make a distinction between trials that will be used as baselines
-            % (no-annotation - we are just keeping a black NIFTI)
-            if ~isempty(iAllSelectedEvents)  % Selected event
-                for iSelectedEvent = iAllSelectedEvents
-                    annotationValue = 1;
-                    isExtended = size(single_info_trial.dataMat.Events(iSelectedEvent).times,1)>1;                                       
+                % Make a distinction between trials that will be used as baselines
+                % (no-annotation - we are just keeping a black NIFTI)
+                if ~isempty(iAllSelectedEvents)  % Selected event
+                    for iSelectedEvent = iAllSelectedEvents
+                        annotationValue = 1;
+                        isExtended = size(single_info_trial.dataMat.Events(iSelectedEvent).times,1)>1;                                       
 
-                    if isExtended
-                        % EXTENDED EVENTS - ANNOTATE BASED ON THEM ONLY
-                        for iEvent = 1:size(single_info_trial.dataMat.Events(iSelectedEvent).times,2)
-                            iAnnotation_time_edges  = bst_closest(single_info_trial.dataMat.Events(iSelectedEvent).times(:,iEvent)', single_info_trial.dataMat.Time);
+                        if isExtended
+                            % EXTENDED EVENTS - ANNOTATE BASED ON THEM ONLY
+                            for iEvent = 1:size(single_info_trial.dataMat.Events(iSelectedEvent).times,2)
+                                iAnnotation_time_edges  = bst_closest(single_info_trial.dataMat.Events(iSelectedEvent).times(:,iEvent)', single_info_trial.dataMat.Time);
 
-                            % If no specific channels are annotated, annotate the entire slice
-                            if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent})
-                                if sProcess.options.gaussian_annot.Value
-                                    F_derivative = gaussian_annotation_function(F_derivative, [], iAnnotation_time_edges);
-                                else                                    
-                                    F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
-                                end
-                            else
-                                iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
-                                selectedChannels = iAnnotation_channels;
+                                % If no specific channels are annotated, annotate the entire slice
+                                if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent})
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation_function(F_derivative, [], iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
+                                else
+                                    iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
+                                    selectedChannels = iAnnotation_channels;
 
-                                if sProcess.options.gaussian_annot.Value
-                                    F_derivative = gaussian_annotation_function(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
-                                else                                    
-                                    F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation_function(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
                                 end
                             end
-                        end
-                    else
-                        % SIMPLE EVENTS - ANNOTATE BASED ON THE TIME WINDOW
-                        % SELECTED AROUND THEM
-                        for iEvent = 1:size(single_info_trial.dataMat.Events(iSelectedEvent).times,2)
-                            % Here the annotation is defined by the selected event
-                            % and the time-window selected around it
-                            iAnnotation_time_edges  = bst_closest(single_info_trial.dataMat.Events(iSelectedEvent).times(iEvent)+sProcess.options.timewindow_annot.Value{1}, single_info_trial.dataMat.Time);
+                        else
+                            % SIMPLE EVENTS - ANNOTATE BASED ON THE TIME WINDOW
+                            % SELECTED AROUND THEM
+                            for iEvent = 1:size(single_info_trial.dataMat.Events(iSelectedEvent).times,2)
+                                % Here the annotation is defined by the selected event
+                                % and the time-window selected around it
+                                iAnnotation_time_edges  = bst_closest(single_info_trial.dataMat.Events(iSelectedEvent).times(iEvent)+sProcess.options.timewindow_annot.Value{1}, single_info_trial.dataMat.Time);
 
-                            % If no specific channels are annotated, annotate the entire slice
-                            if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}) || sProcess.options.whole_partial_annotation.Value==1
-                                if sProcess.options.gaussian_annot.Value
-                                    F_derivative = gaussian_annotation_function(F_derivative, [], iAnnotation_time_edges);
-                                else                                    
-                                    F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
-                                end
-                            else
-                                iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
-                                selectedChannels = iAnnotation_channels;
+                                % If no specific channels are annotated, annotate the entire slice
+                                if isempty(single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}) || sProcess.options.whole_partial_annotation.Value==1
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation_function(F_derivative, [], iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(:,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
+                                else
+                                    iAnnotation_channels  = find(ismember({single_info_trial.ChannelMat.Channel.Name}, single_info_trial.dataMat.Events(iSelectedEvent).channels{1,iEvent}));
+                                    selectedChannels = iAnnotation_channels;
 
-                                if sProcess.options.gaussian_annot.Value
-                                    F_derivative = gaussian_annotation_function(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
-                                else                                    
-                                    F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    if sProcess.options.gaussian_annot.Value
+                                        F_derivative = gaussian_annotation_function(F_derivative, iAnnotation_channels, iAnnotation_time_edges);
+                                    else                                    
+                                        F_derivative(iAnnotation_channels,iAnnotation_time_edges(1):iAnnotation_time_edges(2)) = annotationValue;
+                                    end
                                 end
                             end
                         end
                     end
+                else
+                    disp('Baseline trial detected - No annotation on its derivative')
                 end
+
+                figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct, modality{iModality});
+                [NIFTI_derivative, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F_derivative, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 1, sProcess);
+                figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
+
+                if max(max(max(NIFTI_derivative))) ~= 0
+                    % Set the values to 0 and 1 for the annotations for
+                    % non-baseline trials (For baseline they are already zero)
+                    NIFTI_derivative = double(NIFTI_derivative)/max(max(max(double(NIFTI_derivative))));
+                end
+
+                % Annotate derivative
+                single_info_trial.sMri.Cube = NIFTI_derivative;
+
+                %% Export the created cube to NIFTI
+                export2NIFTI(single_info_trial.sMri, single_info_trial.parentPathStore, single_info_trial.OutputMriFileDerivativeStore{iModality});
+
             else
-                disp('Baseline trial detected - No annotation on its derivative')
+                figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
             end
-
-            figures_struct = open_close_topography_window(single_info_trial.FileName, 'open', iFile, figures_struct, modality{iModality});
-            [NIFTI_derivative, channels_pixel_coordinates] = channelMatrix2pixelMatrix(F_derivative, single_info_trial.dataMat.Time, single_info_trial.ChannelMat, selectedChannels, iFile, figures_struct, 1, sProcess);
-            figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
-
-            if max(max(max(NIFTI_derivative))) ~= 0
-                % Set the values to 0 and 1 for the annotations for
-                % non-baseline trials (For baseline they are already zero)
-                NIFTI_derivative = double(NIFTI_derivative)/max(max(max(double(NIFTI_derivative))));
-            end
-
-            % Annotate derivative
-            single_info_trial.sMri.Cube = NIFTI_derivative;
-
-            %% Export the created cube to NIFTI
-            export2NIFTI(single_info_trial.sMri, single_info_trial.parentPath, single_info_trial.OutputMriFileDerivative{iModality});
-
-        else
-            figures_struct = open_close_topography_window(single_info_trial.FileName, 'close', iFile, figures_struct, modality{iModality});
         end
+        % Create the output folder first
+        OutputMriFile_full = bst_fullfile(single_info_trial.parentPath, [single_info_trial.OutputMriFile{1} '.gz']);
+        [filepath,name,ext] = fileparts(OutputMriFile_full);
+        if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
+            mkdir(bst_fileparts(OutputMriFile_full))
+        end   
+        copyfile(bst_fullfile(single_info_trial.parentPathStore, [single_info_trial.OutputMriFileStore{1} '.gz']), OutputMriFile_full);
+        
+
+        % For segmentation we dont really need this - we have the info from the
+        % trials themselved - they are not truncated as is the case with the
+        % training part
+        % Create the output folder first
+        OutputTimesFile_full = bst_fullfile(single_info_trial.channels_times_path, [single_info_trial.OutputTimesFile]);
+        [filepath,name,ext] = fileparts(OutputTimesFile_full);
+        if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
+            mkdir(bst_fileparts(OutputTimesFile_full))
+        end   
+        copyfile(bst_fullfile(single_info_trial.channels_times_path_store, [single_info_trial.OutputTimesFileStore]), OutputTimesFile_full);
+        
+        % Create the output folder first
+        OutputMriFileDerivative_full = bst_fullfile(single_info_trial.parentPath, [single_info_trial.OutputMriFileDerivative{1} '.gz']);
+        [filepath,name,ext] = fileparts(OutputMriFileDerivative_full);
+        if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
+            mkdir(bst_fileparts(OutputMriFileDerivative_full))
+        end   
+        copyfile(bst_fullfile(single_info_trial.parentPathStore, [single_info_trial.OutputMriFileDerivativeStore{1} '.gz']), OutputMriFileDerivative_full);
+        
+        OutputMriFile{iModality,1} = OutputMriFile_full;
     end
 end
 
@@ -1100,7 +1145,7 @@ function export_Channels_Times(single_info_trial, channels_pixel_coordinates, Ti
             % trials themselved - they are not truncated as is the case with the
             % training part
             % Create the output folder first
-            OutputTimesFile = bst_fullfile(single_info_trial.channels_times_path, single_info_trial.OutputTimesFile);
+            OutputTimesFile = bst_fullfile(single_info_trial.channels_times_path_store, single_info_trial.OutputTimesFileStore);
             
             [filepath,name,ext] = fileparts(OutputTimesFile);
             if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
@@ -1112,7 +1157,7 @@ function export_Channels_Times(single_info_trial, channels_pixel_coordinates, Ti
             
         case 'segmentation'
             % Create the output folder first
-            OutputChannelsFile = bst_fullfile(single_info_trial.channels_times_path, single_info_trial.OutputChannelsFile);
+            OutputChannelsFile = bst_fullfile(single_info_trial.channels_times_path_store, single_info_trial.OutputChannelsFileStore);
             [filepath,name,ext] = fileparts(OutputChannelsFile);
             if ~exist(filepath, 'dir')  % This avoids a warning if the folder already exists
                 mkdir(bst_fileparts(OutputChannelsFile))
