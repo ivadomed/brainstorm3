@@ -120,6 +120,13 @@ function sProcess = GetDescription() %#ok<DEFNU>
     sProcess.options.annotation_threshold.Comment = 'Annotation threshold [0,100]</FONT></I>';
     sProcess.options.annotation_threshold.Type    = 'value';
     sProcess.options.annotation_threshold.Value   = {90, [], []};
+    % Deep learning model
+    sProcess.options.label10.Comment = 'A higher value will enable differentiation between adjacent events';
+    sProcess.options.label10.Type    = 'label';
+    % Majority vote for segmentation
+    sProcess.options.majority_threshold.Comment = 'Majority vote threshold [0,100]</FONT></I>';
+    sProcess.options.majority_threshold.Type    = 'value';
+    sProcess.options.majority_threshold.Value   = {50, '%', []};
     
     % Deep learning model
     sProcess.options.label10.Comment = 'A higher value will enable differentiation between adjacent events';
@@ -484,7 +491,9 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
             [tmp ,indexCh] = ismember(T.ChannelNames{iChannel}, {ChannelMat.Channel.Name});
             
             % Aplly annotation threshold
+            
             indicesTime = find(MRI.Cube(T.x_coordinates(iChannel), T.y_coordinates(iChannel), :) > 255 * sProcess.options.annotation_threshold.Value{1}/100);
+            disp(MRI.Cube(T.x_coordinates(iChannel), T.y_coordinates(iChannel), indicesTime));
             F_segmented(indexCh,indicesTime) = true;
         end
         
@@ -498,9 +507,11 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         for iSample = 1:size(F_segmented,2)
             % If annotated
             if any(F_segmented(:,iSample))
-                mask(iSample) = true;
                 annotated_Channels_on_Sample = find(F_segmented(:,iSample));
-                
+                if length(annotated_Channels_on_Sample) > sProcess.options.majority_threshold.Value{1} * length(T.ChannelNames) / 100
+                    mask(iSample) = true;
+                end
+
                 if strcmp(sProcess.options.annotation.Comment{sProcess.options.annotation.Value}, 'Partial') && ~isempty(annotated_Channels_on_Sample)
                     channelsContributingToAnnotation = unique([channelsContributingToAnnotation  {ChannelMat.Channel(annotated_Channels_on_Sample).Name}]);
                 else

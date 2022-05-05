@@ -138,7 +138,7 @@ function sProcess = GetDescription() %#ok<*DEFNU>
     % Use gaussian soft annotation
     sProcess.options.channelDropOut.Comment = 'Channels drop-out';
     sProcess.options.channelDropOut.Type    = 'value';
-    sProcess.options.channelDropOut.Value   = {[], 'channels', 0};
+    sProcess.options.channelDropOut.Value   = {0, 'channels', 0};
     sProcess.options.channelDropOut_help.Comment = '<I><FONT color="#777777">Remove n channels randomly up to the selected value</FONT></I>';
     sProcess.options.channelDropOut_help.Type = 'label';
     
@@ -248,6 +248,9 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
             if sProcess.options.baselines.Value
                 n_no_event = length(input_no_event);
                 n_no_event_to_add = min(n_event, sProcess.options.segment_number.Value{1});
+                if n_no_event_to_add > n_no_event
+                    n_no_event_to_add = n_no_event;
+                end
                 randomIndex_to_add = randperm(n_no_event, n_no_event_to_add);
                 inputs_to_remove(sub_inputs_no_event(randomIndex_to_add)) = false;
             end
@@ -315,11 +318,18 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                 parentPath = bst_fullfile(sProcess.options.BIDSfolder.Value{1}, [protocol.Comment '_' modality '_datasetID_1']);
             end
         end
+        
+        % Parent path to the folder where all the Nifti are stored
+        parentPathStore = bst_fullfile(files(iFolder).folder, 'NiftiStore');
     else
         parentPath = bst_fullfile(bst_get('BrainstormTmpDir'), ...
                        'IvadomedNiftiFiles', ...
                        protocol.Comment);
+        % Parent path to the folder where all the Nifti are stored
+        parentPathStore = bst_fullfile(bst_get('BrainstormTmpDir'), 'NiftiStore');
     end
+    
+    
     
     empty_IVADOMED_folder = true;
     % Remove previous entries
@@ -366,23 +376,23 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         iEpoch = str2double(splitComment{2});
         
         if ~strcmp(modality, 'MEG+EEG')
-            if ~(sProcess.options.bidsFolders.Value==3)
+%             if ~(sProcess.options.bidsFolders.Value==3)
             
-                % This is a hack until the ivadomed code is changed - TODO
-                iLetter = floor(iEpoch/10);
-                if iLetter == 0
-                    iEpoch = num2str(iEpoch);
-                elseif iLetter <= 24
-                    iEpoch = [letters(iLetter) num2str(iEpoch)];
-                elseif iLetter > 24 && iLetter <= 48
-                    iEpoch = [letters(iLetter-24) 'A' num2str(iEpoch)];
-                elseif iLetter > 48 && iLetter < 72
-                    iEpoch = [letters(iLetter-48) 'B' num2str(iEpoch)];
-                end
-                info_trials(iInput).trial = {[modality comment iEpoch]};
-            else
-                info_trials(iInput).trial = {[modality comment]};
+            % This is a hack until the ivadomed code is changed - TODO
+            iLetter = floor(iEpoch/10);
+            if iLetter == 0
+                iEpoch = num2str(iEpoch);
+            elseif iLetter <= 24
+                iEpoch = [letters(iLetter) num2str(iEpoch)];
+            elseif iLetter > 24 && iLetter <= 48
+                iEpoch = [letters(iLetter-24) 'A' num2str(iEpoch)];
+            elseif iLetter > 48 && iLetter < 72
+                iEpoch = [letters(iLetter-48) 'B' num2str(iEpoch)];
             end
+            info_trials(iInput).trial = {[modality comment iEpoch]};
+%             else
+%                 info_trials(iInput).trial = {[modality comment]};
+%             end
         else
             info_trials(iInput).trial = {'MEG', 'EEG'};
         end
@@ -414,6 +424,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         % TODO - CONSIDER ADDING THE INDIVIDUAL ANATOMY HERE
         info_trials(iInput).sMri = load(bst_fullfile(bst_get('BrainstormHomeDir'), 'defaults', 'anatomy', 'ICBM152', 'subjectimage_T1.mat'));
         info_trials(iInput).parentPath = parentPath;
+        info_trials(iInput).parentPathStore = parentPathStore;
         info_trials(iInput).channels_times_path = channels_times_path;
         
         
@@ -423,7 +434,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
         trial   = info_trials(iInput).trial;
         
         for iTrial = 1:length(trial)
-        
+            info_trials(iInput).OutputMriFileStore{iTrial} = bst_fullfile(['dropout_' num2str(sProcess.options.channelDropOut.Value{1}) '-Jitter_' num2str(sProcess.options.jitter.Value{1}) '-fs_' num2str(sProcess.options.fs.Value{1}) '-whole_partial_' num2str(sProcess.options.whole_partial_annotation.Value)],['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
             if sProcess.options.bidsFolders.Value==1
                 % Images
                 info_trials(iInput).OutputMriFile{iTrial} = bst_fullfile(['sub-' subject], ['ses-' session], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
@@ -467,7 +478,7 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
                     subject_new = [subject session num2str(iInput)];
                 end
                 info_trials(iInput).subject            = subject_new;
-                info_trials(iInput).OutputMriFile{iTrial}      = bst_fullfile(['sub-' subject_new], 'anat', ['sub-' subject_new '_' trial{iTrial} '.nii']);
+                info_trials(iInput).OutputMriFile{iTrial}      = bst_fullfile(['sub-' subject_new], 'anat', ['sub-' subject '_ses-' session '_' trial{iTrial} '.nii']);
                 info_trials(iInput).OutputChannelsFile = bst_fullfile(['sub-' subject_new], 'anat', 'channels.csv');
                 info_trials(iInput).OutputTimesFile    = bst_fullfile(['sub-' subject_new], 'anat', ['times_' trial{1} '.csv']);
 
@@ -528,9 +539,15 @@ function OutputFiles = Run(sProcess, sInputs, return_filenames)
             disp(['Trial: ' num2str(iFile) '/' num2str(length(info_trials))])
             
             % Don't recompute if it already exists (might want to remove that - TODO)
-            if ~(exist(bst_fullfile(info_trials(iFile).parentPath, [info_trials(iFile).OutputMriFile{1} '.gz']), 'file') == 2)
+            if ~(exist(bst_fullfile(info_trials(iFile).parentPathStore, [info_trials(iFile).OutputMriFileStore{1} '.gz']), 'file') == 2)
                 [filenames(iFile), subjects(iFile)] = convertTopography2matrix(info_trials(iFile), sProcess, iFile, figures_struct);
+            else
+                for iModality = 1:length(modality)
+                    subjects(iFile) = {info_trials(iFile).subject};
+                end
+                copyfile(bst_fullfile(info_trials(iFile).parentPathStore, [info_trials(iFile).OutputMriFileStore{1} '.gz']), bst_fullfile(info_trials(iFile).parentPath, [info_trials(iFile).OutputMriFile{1} '.gz']));
             end
+            
             bst_progress('inc', 1);
         end
     end
@@ -639,6 +656,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
 
         %% Drop out channels if requested
         if ~isempty(sProcess.options.channelDropOut.Value{1}) && sProcess.options.channelDropOut.Value{1}~=0
+            disp('dropout');
             nChannelsToDropout = randi(sProcess.options.channelDropOut.Value{1});
             iChannelsToDropout = selectedChannels(randi(length(selectedChannels), nChannelsToDropout,1));
             
@@ -658,7 +676,7 @@ function [OutputMriFile, subject] = convertTopography2matrix(single_info_trial, 
         single_info_trial.sMri.Cube = NIFTI;
 
         %% Export the created cube to NIFTI
-        OutputMriFile{iModality,1} = export2NIFTI(single_info_trial.sMri, single_info_trial.parentPath, single_info_trial.OutputMriFile{iModality});
+        OutputMriFile{iModality,1} = export2NIFTI(single_info_trial.sMri, single_info_trial.parentPathStore, single_info_trial.OutputMriFileStore{iModality});
 
         %% Export times if doing training, and channels' coordinates if doing segmentation
         export_Channels_Times(single_info_trial, channels_pixel_coordinates, single_info_trial.dataMat.Time', sProcess.options.convert.Value);
@@ -1052,7 +1070,7 @@ end
 
 function OutputMriFile_full = export2NIFTI(sMri, parentPath, OutputMriFile)
     %% Export to NIFTI
-
+    
     OutputMriFile_full = bst_fullfile(parentPath, OutputMriFile);
     
     % Create the output folder first
