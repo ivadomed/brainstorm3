@@ -257,6 +257,8 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     sProcess.options.bidsFolders.Comment    = {'Normal', 'Separate runs/sessions as different subjects', 'Separate each trial as different subjects'}; % Same
     sProcess.options.bidsFolders.Value      = find(ismember(sProcess.options.bidsFolders.Comment, config_struct.brainstorm.bids_folder_creation_mode));  
     sProcess.options.channelDropOut.Value   = {config_struct.brainstorm.channel_drop_out, 'channels', 0};
+    sProcess.options.jitter.Value           = {config_struct.brainstorm.jitter, 'ms', 0};
+    sProcess.options.whole_partial_annotation.Value   = {config_struct.brainstorm.whole_partial_annotation};
     
     %% If the input is a raw file, segment it into "trials" with a sliding window
     % The size of the window needs to be the same as the trials used to
