@@ -124,7 +124,12 @@ function sProcess = GetDescription() %#ok<DEFNU>
     % Deep learning model
     sProcess.options.label10.Comment = 'A higher value will enable differentiation between adjacent events';
     sProcess.options.label10.Type    = 'label';
-        
+    
+    % Majority vote for segmentation
+    sProcess.options.majority_threshold.Comment = 'Majority vote threshold [0,100]</FONT></I>';
+    sProcess.options.majority_threshold.Type    = 'value';
+    sProcess.options.majority_threshold.Value   = {50, '%', []};
+    
     % Display example image in FSLeyes
     sProcess.options.dispExample.Comment = 'Open an example image/derivative on FSLeyes';
     sProcess.options.dispExample.Type    = 'checkbox';
@@ -218,6 +223,7 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
     %config_struct.command = 'segment'; % Not needed - use CLI call
     config_struct.gpu_ids = {sProcess.options.gpu.Value{1}};
     
+    config_struct.postprocessing.binarize_prediction.thr = sProcess.options.annotation_threshold.Value{1}/100;
     % Save back to json
 %     txt = jsonencode(config_struct, 'PrettyPrint', true);
 %     txt = jsonencode(config_struct, 'ConvertInfAndNaN', true);
@@ -498,9 +504,11 @@ function OutputFiles = Run(sProcess, sInputs) %#ok<DEFNU>
         for iSample = 1:size(F_segmented,2)
             % If annotated
             if any(F_segmented(:,iSample))
-                mask(iSample) = true;
+%                 mask(iSample) = true;
                 annotated_Channels_on_Sample = find(F_segmented(:,iSample));
-                
+                if length(annotated_Channels_on_Sample) > sProcess.options.majority_threshold.Value{1} * length(T.ChannelNames) / 100
+                    mask(iSample) = true;
+                end
                 if strcmp(sProcess.options.annotation.Comment{sProcess.options.annotation.Value}, 'Partial') && ~isempty(annotated_Channels_on_Sample)
                     channelsContributingToAnnotation = unique([channelsContributingToAnnotation  {ChannelMat.Channel(annotated_Channels_on_Sample).Name}]);
                 else
