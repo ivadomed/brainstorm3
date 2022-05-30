@@ -27,7 +27,7 @@ function varargout = process_ivadomed_create_dataset( varargin )
 % =============================================================================@
 %
 % Author: Konstantinos Nasiotis, 2021-2022
-
+disp('Storage');
 eval(macro_method);
 end
 
